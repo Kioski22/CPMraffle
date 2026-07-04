@@ -35,7 +35,7 @@ if ($configuredUser !== '') {
 
 // Legacy hosted credential fallback for existing deployments.
 $credentialCandidates[] = [
-    'user' => 'icto_randy_6',
+    'user' => 'kioski002',
     'pass' => '091902Rands@',
 ];
 
