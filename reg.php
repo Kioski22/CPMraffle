@@ -414,6 +414,7 @@ if (isset($_POST['submit'])) {
                     <select id="role" name="role" required>
                         <option value="admin">Admin</option>
                         <option value="secretariat">Secretariat</option>
+                        <option value="cpmadmin">CPM Admin</option>
                     </select>
                 </div>
                 <button class="btn-submit" type="submit" name="submit">Register</button>

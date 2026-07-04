@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
-auth_require_roles(['admin', 'secretariat']);
+auth_require_roles(['admin', 'secretariat', 'cpmadmin']);
 
 $canManageBuyers = auth_is_admin();
 $isAdmin = auth_is_admin();

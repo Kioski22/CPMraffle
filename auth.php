@@ -8,7 +8,7 @@ if (!function_exists('auth_normalize_role')) {
     function auth_normalize_role(?string $role): string
     {
         $normalized = strtolower(trim((string) $role));
-        return in_array($normalized, ['admin', 'secretariat', 'chapter'], true) ? $normalized : '';
+        return in_array($normalized, ['admin', 'secretariat', 'chapter', 'cpmadmin'], true) ? $normalized : '';
     }
 }
 
@@ -48,6 +48,13 @@ if (!function_exists('auth_is_secretariat')) {
     }
 }
 
+if (!function_exists('auth_is_cpmadmin')) {
+    function auth_is_cpmadmin(): bool
+    {
+        return auth_role() === 'cpmadmin';
+    }
+}
+
 if (!function_exists('auth_dashboard_path_for_role')) {
     function auth_dashboard_path_for_role(string $role): string
     {
@@ -56,6 +63,9 @@ if (!function_exists('auth_dashboard_path_for_role')) {
         }
         if ($role === 'chapter') {
             return 'chapter_dashboard.php';
+        }
+        if ($role === 'cpmadmin') {
+            return 'cpmadmin_dashboard.php';
         }
         return 'admin_dashboard.php';
     }

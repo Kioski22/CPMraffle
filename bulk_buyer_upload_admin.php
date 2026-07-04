@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
-auth_require_roles(['admin']);
+auth_require_roles(['admin', 'cpmadmin']);
 $isAdmin = auth_is_admin();
 $dashboardPath = '/CPMraffle/' . auth_dashboard_path_for_role(auth_role());
 require_once __DIR__ . '/dashboard_sidebar_helper.php';
