@@ -92,6 +92,5 @@ if ($stmt) {
             </a>
         </div>
     </div>
-    <?php require_once __DIR__ . '/dashboard_sidebar_helper.php'; render_dashboard_sidebar('/CPMraffle/cpmadmin_dashboard.php', false, '/CPMraffle/cpmadmin_dashboard.php'); ?>
 </body>
 </html>

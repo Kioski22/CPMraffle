@@ -205,7 +205,7 @@ $ticketRangeSummary = ticket_format_number_ranges(array_filter($ticketNumbers));
                 <div class="form-check mb-3">
                     <input class="form-check-input" type="checkbox" name="accept_terms" id="accept_terms" value="1" required>
                     <label class="form-check-label" for="accept_terms">
-                        I confirm that the above details are true and correct, I accept the designated tickets, and I understand that grand prizes are subject to tax.
+                        I confirm that the above details are true and correct, and I accept the designated tickets.
                     </label>
                 </div>
 
