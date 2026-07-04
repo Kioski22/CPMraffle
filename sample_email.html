@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ticket Assignment</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: #0d1224;
+      font-family: 'Source Sans 3', Arial, sans-serif;
+      color: #0d1f4e;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .email-wrapper {
+      max-width: 620px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #b8901e;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background-color: #0d1f4e;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #glitterCanvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ── HEADER TEXT ── */
+    .header-top {
+      padding: 26px 40px 20px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .header-eyebrow {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #c9a227;
+      margin-bottom: 12px;
+    }
+
+    .header-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+
+    .header-rule {
+      width: 44px;
+      height: 3px;
+      background: #c9a227;
+      border: none;
+      margin: 14px 0 0;
+    }
+
+    /* ── TICKET IMAGE BAND ── */
+    .img-band {
+      background: #0a1840;
+      border-top: 1px solid rgba(201, 162, 39, 0.25);
+      padding: 18px 28px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .ticket-box {
+      width: 100%;
+      min-height: 0;
+      background: #111f52;
+      border: 1.5px dashed rgba(201, 162, 39, 0.45);
+      border-radius: 6px;
+      padding: 10px;
+      overflow: hidden;
+      color: rgba(201, 162, 39, 0.65);
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    .ticket-box > * {
+      max-width: 100%;
+    }
+    .ticket-box p {
+      margin: 0 0 8px;
+      width: 100%;
+      text-align: left;
+    }
+    .ticket-box img {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 0 !important;
+      border-radius: 4px;
+      object-fit: contain;
+    }
+
+    /* ── GREETING BAND ── */
+    .greeting-band {
+      background: #f7f4e9;
+      border-left: 4px solid #c9a227;
+      padding: 18px 40px;
+    }
+
+    .greeting-band p {
+      font-size: 15px;
+      color: #1a2f5a;
+      line-height: 1.5;
+    }
+
+    .greeting-band strong {
+      color: #0d1f4e;
+      font-weight: 600;
+    }
+
+    /* ── BODY ── */
+    .body {
+      padding: 36px 40px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #c9a227;
+      margin-bottom: 20px;
+    }
+
+    .detail-grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 28px;
+    }
+
+    .detail-grid tr {
+      border-bottom: 1px solid #e8e0c8;
+    }
+
+    .detail-grid tr:last-child {
+      border-bottom: none;
+    }
+
+    .detail-grid td {
+      padding: 13px 0;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .detail-grid td.label {
+      width: 40%;
+      font-weight: 600;
+      color: #0d1f4e;
+      padding-right: 14px;
+    }
+
+    .detail-grid td.value {
+      color: #3a4a72;
+      font-weight: 300;
+    }
+
+    /* ── CTA ── */
+    .cta-block {
+      background: #0d1f4e;
+      border: 1.5px solid #c9a227;
+      border-radius: 4px;
+      padding: 26px 28px;
+      margin: 28px 0;
+      text-align: center;
+    }
+
+    .cta-block p {
+      color: #b8a06a;
+      font-size: 12px;
+      margin-bottom: 14px;
+      letter-spacing: 0.5px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      background: #c9a227;
+      color: #0d1f4e !important;
+      text-decoration: none;
+      font-family: 'Source Sans 3', Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 13px 34px;
+      border-radius: 2px;
+    }
+
+    /* ── NOTICE ── */
+    .notice {
+      background: #f7f4e9;
+      border-top: 2px solid #c9a227;
+      padding: 16px 22px;
+      border-radius: 0 0 4px 4px;
+      margin-top: 6px;
+    }
+
+    .notice p {
+      font-size: 12px;
+      color: #5a4a20;
+      line-height: 1.6;
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      background-color: #07122e;
+      padding: 24px 40px;
+      text-align: center;
+    }
+
+    .footer p {
+      font-size: 11px;
+      color: #5a6a99;
+      line-height: 1.7;
+    }
+
+    .footer-divider {
+      width: 28px;
+      border: none;
+      border-top: 1px solid #1e3065;
+      margin: 10px auto;
+    }
+
+    .gold-dot {
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #c9a227;
+      vertical-align: middle;
+      margin: 0 7px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="email-wrapper">
+
+  <!-- HEADER -->
+  <div class="header">
+
+    <!-- Glitter Canvas -->
+    <canvas id="glitterCanvas"></canvas>
+
+    <!-- HEADER TEXT -->
+    <div class="header-top">
+      <p class="header-eyebrow">Ticket Assignment</p>
+      <h1 class="header-title">Your tickets<br>are ready.</h1>
+      <hr class="header-rule" />
+    </div>
+
+    <!-- TICKET IMAGE BAND -->
+    <div class="img-band">
+      <div class="ticket-box">
+        {{ticket_image}}
+      </div>
+    </div>
+
+  </div>
+  <!-- END HEADER -->
+
+  <!-- GREETING -->
+  <div class="greeting-band">
+    <p>Hello, <strong>{{full_name}}</strong> — your ticket assignment has been confirmed and is ready for activation.</p>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+
+    <p class="section-label">Assignment Details</p>
+
+    <table class="detail-grid" role="presentation">
+      <tr>
+        <td class="label">Tickets</td>
+        <td class="value">{{ticket_list}}</td>
+      </tr>
+      <tr>
+        <td class="label">Ranges</td>
+        <td class="value">{{ticket_ranges}}</td>
+      </tr>
+      <tr>
+        <td class="label">Count</td>
+        <td class="value">{{ticket_count}}</td>
+      </tr>
+      <tr>
+        <td class="label">Chapter</td>
+        <td class="value">{{chapter}}</td>
+      </tr>
+      <tr>
+        <td class="label">Portal Expires</td>
+        <td class="value">{{portal_expires_at}}</td>
+      </tr>
+      <tr>
+        <td class="label">Date</td>
+        <td class="value">{{current_date}}</td>
+      </tr>
+    </table>
+
+    <!-- CTA -->
+    <div class="cta-block">
+      <p>Activate your tickets before the portal expires</p>
+      <a href="{{activation_link}}" class="cta-button">Activate Your Tickets</a>
+    </div>
+
+    <!-- NOTICE -->
+    <div class="notice">
+      <p>&#128203; &nbsp;Please keep this email for your records. If you have any questions regarding your ticket assignment, contact your chapter administrator.</p>
+    </div>
+
+  </div>
+  <!-- END BODY -->
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <p>This is an automated message — please do not reply directly to this email.</p>
+    <hr class="footer-divider" />
+    <p>© {{current_date}} <span class="gold-dot"></span> {{chapter}}</p>
+  </div>
+
+</div>
+<!-- END EMAIL WRAPPER -->
+
+<script>
+(function () {
+  var canvas = document.getElementById('glitterCanvas');
+  var header = canvas.parentElement;
+
+  function init() {
+    canvas.width = header.offsetWidth;
+    canvas.height = header.offsetHeight;
+    startGlitter();
+  }
+
+  function startGlitter() {
+    var ctx = canvas.getContext('2d');
+    var W = canvas.width;
+    var H = canvas.height;
+
+    var golds = [
+      'rgba(255,215,0,',
+      'rgba(201,162,39,',
+      'rgba(255,240,130,',
+      'rgba(245,195,60,',
+      'rgba(255,252,200,'
+    ];
+
+    var N = 120;
+    var pts = [];
+    for (var i = 0; i < N; i++) {
+      pts.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: Math.random() * 3.5 + 1.2,
+        type: Math.random() < 0.55 ? 'star' : 'dot',
+        color: golds[Math.floor(Math.random() * golds.length)],
+        phase: Math.random() * Math.PI * 2,
+        freq: Math.random() * 0.012 + 0.006,
+        dx: (Math.random() - 0.5) * 0.25,
+        dy: (Math.random() - 0.5) * 0.18,
+        peak: Math.random() * 0.65 + 0.25
+      });
+    }
+
+    var t = 0;
+
+    function frame() {
+      ctx.clearRect(0, 0, W, H);
+      t += 0.018;
+
+      pts.forEach(function (p) {
+        var a = p.peak * (0.35 + 0.65 * ((Math.sin(t * p.freq * 60 + p.phase) + 1) / 2));
+        p.x += p.dx;
+        p.y += p.dy;
+        if (p.x < -8) p.x = W + 8;
+        if (p.x > W + 8) p.x = -8;
+        if (p.y < -8) p.y = H + 8;
+        if (p.y > H + 8) p.y = -8;
+
+        if (p.type === 'star') {
+          ctx.save();
+          ctx.globalAlpha = a;
+          ctx.translate(p.x, p.y);
+          ctx.fillStyle = p.color + '0.9)';
+          ctx.beginPath();
+          for (var j = 0; j < 8; j++) {
+            var ang = j * Math.PI / 4;
+            var rad = j % 2 === 0 ? p.r : p.r * 0.38;
+            if (j === 0) {
+              ctx.moveTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+            } else {
+              ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+            }
+          }
+          ctx.closePath();
+          ctx.fill();
+          if (a > 0.45) {
+            ctx.globalAlpha = a * 0.4;
+            ctx.strokeStyle = p.color + '1)';
+            ctx.lineWidth = 0.6;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-p.r * 2.8, 0); ctx.lineTo(p.r * 2.8, 0);
+            ctx.moveTo(0, -p.r * 2.8); ctx.lineTo(0, p.r * 2.8);
+            ctx.stroke();
+          }
+          ctx.restore();
+        } else {
+          ctx.save();
+          ctx.globalAlpha = a;
+          ctx.fillStyle = p.color + a + ')';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+
+      requestAnimationFrame(frame);
+    }
+
+    frame();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    setTimeout(init, 60);
+  }
+})();
+</script>
+
+</body>
+</html>
