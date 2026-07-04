@@ -14,7 +14,7 @@ if (!function_exists('render_dashboard_sidebar')) {
             ['path' => '/CPMraffle/buyer.php', 'icon' => 'fas fa-user-plus', 'label' => 'Buyer Assignment'],
             ['path' => '/CPMraffle/admin_purchase_requests.php', 'icon' => 'fas fa-cash-register', 'label' => 'Onsite Requests'],
             ['path' => $bulkUploadPath, 'icon' => 'fas fa-file-upload', 'label' => 'Bulk Buyer Upload'],
-            ['path' => '/CPMraffle/participant_list.php', 'icon' => 'fas fa-users', 'label' => 'Buyer List'],
+            ['path' => '/CPMraffle/participant_list.php', 'icon' => 'fas fa-users', 'label' => 'Assigned Tickets'],
             ['path' => '/CPMraffle/chapter_management.php', 'icon' => 'fas fa-building', 'label' => 'Chapter Management'],
             ['path' => '/CPMraffle/assign_tickets_to_chapter.php', 'icon' => 'fas fa-share-square', 'label' => 'Chapter Allocation'],
             ['path' => '/CPMraffle/admin_chapter_allocation.php', 'icon' => 'fas fa-diagram-project', 'label' => 'Unified Allocation'],

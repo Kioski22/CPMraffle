@@ -52,7 +52,7 @@ return [
         'connect_timeout' => (int) ticket_config_value('TICKET_DB_CONNECT_TIMEOUT', ticket_config_value('DB_CONNECT_TIMEOUT', '5')),
         'username' => ticket_config_value('TICKET_DB_USERNAME', ticket_config_value('DB_USERNAME', ticket_config_value('DB_USER', 'root'))),
         'password' => ticket_config_value('TICKET_DB_PASSWORD', ticket_config_value('DB_PASSWORD', '')),
-        'database' => ticket_config_value('TICKET_DB_NAME', ticket_config_value('DB_DATABASE', ticket_config_value('DB_NAME', 'rafflev2'))),
+        'database' => ticket_config_value('TICKET_DB_NAME', ticket_config_value('DB_DATABASE', ticket_config_value('DB_NAME', 'cpmrafflev2'))),
         'debug_errors' => ticket_config_value('TICKET_DB_DEBUG_ERRORS', ticket_config_value('DB_DEBUG_ERRORS', '0')) === '1',
     ],
     'app' => [

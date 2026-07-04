@@ -9,8 +9,8 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET time_zone = "+00:00";
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE DATABASE IF NOT EXISTS `rafflev2` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE `rafflev2`;
+CREATE DATABASE IF NOT EXISTS `cpmrafflev2` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `cpmrafflev2`;
 
 -- --------------------------------------------------------
 -- Core account table (preserved)

@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $mysqlExe = 'C:\xampp\mysql\bin\mysql.exe'
 $phpExe = 'C:\xampp\php\php.exe'
-$sqlFile = Join-Path $projectRoot 'rafflev2_event_reset.sql'
+$sqlFile = Join-Path $projectRoot 'cpmrafflev2_event_reset.sql'
 
 if (-not (Test-Path $mysqlExe)) {
     throw "mysql.exe not found at $mysqlExe"
@@ -16,10 +16,10 @@ if (-not (Test-Path $sqlFile)) {
 }
 
 Write-Host 'Ensuring database exists...' -ForegroundColor Cyan
-& $mysqlExe -u root -e "CREATE DATABASE IF NOT EXISTS rafflev2;"
+& $mysqlExe -u root -e "CREATE DATABASE IF NOT EXISTS cpmrafflev2;"
 
 Write-Host 'Importing SQL reset file...' -ForegroundColor Cyan
-& $mysqlExe -u root rafflev2 --execute="source c:/xampp/htdocs/CPMraffle/rafflev2_event_reset.sql"
+& $mysqlExe -u root cpmrafflev2 --execute="source c:/xampp/htdocs/CPMraffle/cpmrafflev2_event_reset.sql"
 
 Write-Host 'Running app DB probe...' -ForegroundColor Cyan
 & $phpExe (Join-Path $projectRoot 'tools\check_local_db.php')

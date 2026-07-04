@@ -11,7 +11,7 @@ $hostCandidates = array_values(array_unique(array_filter([
     return trim((string) $value) !== '';
 })));
 
-$dbName = trim((string) ($databaseConfig['database'] ?? 'rafflev2'));
+$dbName = trim((string) ($databaseConfig['database'] ?? 'cpmrafflev2'));
 $dbPort = (int) ($databaseConfig['port'] ?? 3306);
 $dbSocket = trim((string) ($databaseConfig['socket'] ?? ''));
 $connectTimeout = (int) ($databaseConfig['connect_timeout'] ?? 5);

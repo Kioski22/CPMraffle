@@ -588,7 +588,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 <li><a href="/CPMraffle/pool_tickets.php"><i class="fas fa-layer-group"></i> Ticket Pool</a></li>
                 <li><a href="/CPMraffle/buyer.php"><i class="fas fa-user-plus"></i> Buyer Assignment</a></li>
                 <li><a href="/CPMraffle/bulk_buyer_upload_admin.php"><i class="fas fa-file-upload"></i> Bulk Buyer Upload</a></li>
-                <li><a href="/CPMraffle/participant_list.php"><i class="fas fa-users"></i> Buyer List</a></li>
+                <li><a href="/CPMraffle/participant_list.php"><i class="fas fa-users"></i> Assigned Tickets</a></li>
                 <?php if ($isAdmin): ?>
                 <li><a href="/CPMraffle/ticket_layout_editor.php"><i class="fas fa-object-group"></i> Ticket Layout</a></li>
                 <li><a href="/CPMraffle/email_template_settings.php"><i class="fas fa-envelope-open-text"></i> Email Templates</a></li>

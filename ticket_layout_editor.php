@@ -5,6 +5,10 @@ auth_require_roles(['admin']);
 include 'db.php';
 require_once __DIR__ . '/buyer_activation_helper.php';
 require_once __DIR__ . '/ticket_layout_helper.php';
+require_once __DIR__ . '/dashboard_sidebar_helper.php';
+
+$isAdmin = auth_is_admin();
+$dashboardPath = '/CPMraffle/' . auth_dashboard_path_for_role(auth_role());
 
 $flashMessage = '';
 $flashType = 'success';
@@ -137,24 +141,7 @@ $previewText = htmlspecialchars(ticket_layout_display_text($layout, ['PSMECPMXWE
 </head>
 <body>
 <div class="dashboard-container">
-    <aside class="sidebar">
-        <div class="sidebar-header"><a href="/CPMraffle/admin_dashboard.php" style="text-decoration:none;"><h1>6th PSME CPM National Conference Dashboard</h1></a></div>
-        <hr>
-        <nav>
-            <ul>
-                <li><a href="/CPMraffle/activated_tickets.php"><i class="fas fa-check-circle"></i> Activated Tickets</a></li>
-                <li><a href="/CPMraffle/pending_tickets.php"><i class="fas fa-hourglass-half"></i> Pending Tickets</a></li>
-                <li><a href="/CPMraffle/generate_qr.php"><i class="fas fa-ticket-alt"></i> Ticket Generation</a></li>
-                <li><a href="/CPMraffle/pool_tickets.php"><i class="fas fa-layer-group"></i> Ticket Pool</a></li>
-                <li><a href="/CPMraffle/buyer.php"><i class="fas fa-user-plus"></i> Buyer Assignment</a></li>
-                <li><a href="/CPMraffle/bulk_buyer_upload_admin.php"><i class="fas fa-file-upload"></i> Bulk Buyer Upload</a></li>
-                <li><a href="/CPMraffle/participant_list.php"><i class="fas fa-users"></i> Buyer List</a></li>
-                <li><a class="active" href="/CPMraffle/ticket_layout_editor.php"><i class="fas fa-object-group"></i> Ticket Layout</a></li>
-                <li><a href="/CPMraffle/email_template_settings.php"><i class="fas fa-envelope-open-text"></i> Email Templates</a></li>
-                <li><a href="/CPMraffle/reports.php"><i class="fas fa-chart-line"></i> Reports</a></li>
-            </ul>
-        </nav>
-    </aside>
+    <?php render_dashboard_sidebar('/CPMraffle/ticket_layout_editor.php', $isAdmin, $dashboardPath); ?>
     <main class="main-content">
         <div class="container py-3">
             <h2 class="mb-3">Ticket Layout Editor</h2>

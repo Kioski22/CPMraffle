@@ -3,10 +3,127 @@ include 'db.php';
 require_once __DIR__ . '/onsite_purchase_helper.php';
 require_once __DIR__ . '/drive_helper.php';
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
 onsite_ensure_schema($conn);
 
 $message = '';
 $messageType = 'success';
+
+$submitCooldownSeconds = 15;
+$duplicateWindowSeconds = 180;
+
+if (!isset($_SESSION['buy_ticket_submission_fingerprints']) || !is_array($_SESSION['buy_ticket_submission_fingerprints'])) {
+    $_SESSION['buy_ticket_submission_fingerprints'] = [];
+}
+
+if (!isset($_SESSION['buy_ticket_buyer_submit_timestamps']) || !is_array($_SESSION['buy_ticket_buyer_submit_timestamps'])) {
+    $_SESSION['buy_ticket_buyer_submit_timestamps'] = [];
+}
+
+if (!isset($_SESSION['buy_ticket_form_token']) || !is_string($_SESSION['buy_ticket_form_token']) || $_SESSION['buy_ticket_form_token'] === '') {
+    $_SESSION['buy_ticket_form_token'] = bin2hex(random_bytes(32));
+}
+
+function buy_ticket_normalize_text(string $value): string
+{
+    $normalized = strtolower(trim($value));
+    $normalized = preg_replace('/\s+/', ' ', $normalized);
+    return trim((string) $normalized);
+}
+
+function buy_ticket_submission_fingerprint(array $data): string
+{
+    $name = buy_ticket_normalize_text((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $contact = preg_replace('/\D+/', '', (string) ($data['contact_number'] ?? ''));
+    $chapter = buy_ticket_normalize_text((string) ($data['chapter'] ?? ''));
+    $quantity = (int) ($data['ticket_quantity'] ?? 0);
+
+    return hash('sha256', implode('|', [$name, $email, $contact, $chapter, (string) $quantity]));
+}
+
+function buy_ticket_buyer_key(array $data): string
+{
+    $name = buy_ticket_normalize_text((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $contact = preg_replace('/\D+/', '', (string) ($data['contact_number'] ?? ''));
+
+    return hash('sha256', implode('|', [$name, $email, $contact]));
+}
+
+function buy_ticket_find_recent_buyer_request(mysqli $conn, array $data, int $windowSeconds): ?array
+{
+    if ($windowSeconds <= 0) {
+        return null;
+    }
+
+    $name = buy_ticket_normalize_text((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $contact = preg_replace('/\D+/', '', (string) ($data['contact_number'] ?? ''));
+    $cutoff = date('Y-m-d H:i:s', time() - $windowSeconds);
+
+    $stmt = $conn->prepare('SELECT id, status, created_at
+        FROM ticket_purchase_requests
+        WHERE LOWER(TRIM(name)) = ?
+          AND LOWER(TRIM(email)) = ?
+          AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact_number, " ", ""), "-", ""), "(", ""), ")", ""), "+", "") = ?
+          AND created_at >= ?
+        ORDER BY id DESC
+        LIMIT 1');
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('ssss', $name, $email, $contact, $cutoff);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? $row : null;
+}
+
+function buy_ticket_find_recent_duplicate_request(mysqli $conn, array $data, int $windowSeconds): ?array
+{
+    if ($windowSeconds <= 0) {
+        return null;
+    }
+
+    $name = buy_ticket_normalize_text((string) ($data['name'] ?? ''));
+    $email = strtolower(trim((string) ($data['email'] ?? '')));
+    $contact = preg_replace('/\D+/', '', (string) ($data['contact_number'] ?? ''));
+    $chapter = buy_ticket_normalize_text((string) ($data['chapter'] ?? ''));
+    $quantity = (int) ($data['ticket_quantity'] ?? 0);
+    $cutoff = date('Y-m-d H:i:s', time() - $windowSeconds);
+
+    $stmt = $conn->prepare('SELECT id, status, created_at
+        FROM ticket_purchase_requests
+        WHERE LOWER(TRIM(name)) = ?
+          AND LOWER(TRIM(email)) = ?
+          AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact_number, " ", ""), "-", ""), "(", ""), ")", ""), "+", "") = ?
+          AND LOWER(TRIM(chapter)) = ?
+          AND ticket_quantity = ?
+          AND created_at >= ?
+          AND status IN ("pending", "approved")
+        ORDER BY id DESC
+        LIMIT 1');
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('ssssis', $name, $email, $contact, $chapter, $quantity, $cutoff);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? $row : null;
+}
 
 $formData = [
     'name' => '',
@@ -19,6 +136,16 @@ $formData = [
 $paymentImageUrls = onsite_get_payment_image_urls($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $sessionToken = (string) ($_SESSION['buy_ticket_form_token'] ?? '');
+    $postedToken = trim((string) ($_POST['form_token'] ?? ''));
+
+    if ($sessionToken === '' || $postedToken === '' || !hash_equals($sessionToken, $postedToken)) {
+        $message = 'Duplicate or expired form submission detected. Please try again.';
+        $messageType = 'danger';
+        $_SESSION['buy_ticket_form_token'] = bin2hex(random_bytes(32));
+    } else {
+        unset($_SESSION['buy_ticket_form_token']);
+
     $formData['name'] = trim((string) ($_POST['name'] ?? ''));
     $formData['email'] = trim((string) ($_POST['email'] ?? ''));
     $formData['contact_number'] = trim((string) ($_POST['contact_number'] ?? ''));
@@ -26,6 +153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formData['ticket_quantity'] = trim((string) ($_POST['ticket_quantity'] ?? '1'));
 
     try {
+        $nowTs = time();
+
         if ($formData['name'] === '' || $formData['email'] === '' || $formData['contact_number'] === '' || $formData['chapter'] === '') {
             throw new RuntimeException('Please complete all required fields.');
         }
@@ -36,6 +165,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $quantity = (int) $formData['ticket_quantity'];
         if ($quantity <= 0 || $quantity > 1000) {
             throw new RuntimeException('Ticket quantity must be between 1 and 1000.');
+        }
+
+        $buyerData = [
+            'name' => $formData['name'],
+            'email' => $formData['email'],
+            'contact_number' => $formData['contact_number'],
+        ];
+        $buyerKey = buy_ticket_buyer_key($buyerData);
+
+        foreach ($_SESSION['buy_ticket_buyer_submit_timestamps'] as $storedBuyerKey => $createdTs) {
+            if (($nowTs - (int) $createdTs) > $duplicateWindowSeconds) {
+                unset($_SESSION['buy_ticket_buyer_submit_timestamps'][$storedBuyerKey]);
+            }
+        }
+
+        $lastBuyerSubmitTs = (int) ($_SESSION['buy_ticket_buyer_submit_timestamps'][$buyerKey] ?? 0);
+        if ($lastBuyerSubmitTs > 0 && ($nowTs - $lastBuyerSubmitTs) < $submitCooldownSeconds) {
+            $waitSeconds = $submitCooldownSeconds - ($nowTs - $lastBuyerSubmitTs);
+            throw new RuntimeException('Please wait ' . $waitSeconds . ' second(s) before sending another request for the same buyer.');
+        }
+
+        $recentBuyerSubmit = buy_ticket_find_recent_buyer_request($conn, $buyerData, $submitCooldownSeconds);
+        if (is_array($recentBuyerSubmit)) {
+            $recentId = (int) ($recentBuyerSubmit['id'] ?? 0);
+            throw new RuntimeException('A recent request for this buyer was already submitted (Reference #' . $recentId . '). Please wait a few seconds and try again.');
         }
 
         if (!isset($_FILES['proof_of_payment']) || !is_array($_FILES['proof_of_payment'])) {
@@ -66,6 +220,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Proof file must be between 1 byte and 10MB.');
         }
 
+        foreach ($_SESSION['buy_ticket_submission_fingerprints'] as $fingerprint => $createdTs) {
+            if (($nowTs - (int) $createdTs) > $duplicateWindowSeconds) {
+                unset($_SESSION['buy_ticket_submission_fingerprints'][$fingerprint]);
+            }
+        }
+
+        $submissionFingerprint = buy_ticket_submission_fingerprint([
+            'name' => $formData['name'],
+            'email' => $formData['email'],
+            'contact_number' => $formData['contact_number'],
+            'chapter' => $formData['chapter'],
+            'ticket_quantity' => $quantity,
+        ]);
+
+        if (isset($_SESSION['buy_ticket_submission_fingerprints'][$submissionFingerprint])) {
+            throw new RuntimeException('A similar request was just submitted. Please wait a few minutes before trying again.');
+        }
+
+        $recentDuplicate = buy_ticket_find_recent_duplicate_request($conn, [
+            'name' => $formData['name'],
+            'email' => $formData['email'],
+            'contact_number' => $formData['contact_number'],
+            'chapter' => $formData['chapter'],
+            'ticket_quantity' => $quantity,
+        ], $duplicateWindowSeconds);
+
+        if (is_array($recentDuplicate)) {
+            $duplicateId = (int) ($recentDuplicate['id'] ?? 0);
+            throw new RuntimeException('A recent matching request already exists (Reference #' . $duplicateId . '). Please wait for admin verification.');
+        }
+
         $uploadResult = ticket_upload_to_google_drive($proof, $appConfig);
         $proofLink = trim((string) ($uploadResult['web_view_link'] ?? ''));
         $driveFileId = trim((string) ($uploadResult['file_id'] ?? ''));
@@ -87,6 +272,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'Purchase request submitted successfully. Reference ID: #' . $requestId . '. Our team will verify your payment and email your ticket activation details after approval.';
         $messageType = 'success';
 
+        $_SESSION['buy_ticket_buyer_submit_timestamps'][$buyerKey] = $nowTs;
+        $_SESSION['buy_ticket_submission_fingerprints'][$submissionFingerprint] = $nowTs;
+
         $formData = [
             'name' => '',
             'email' => '',
@@ -97,6 +285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $exception) {
         $message = $exception->getMessage();
         $messageType = 'danger';
+    }
+
+    $_SESSION['buy_ticket_form_token'] = bin2hex(random_bytes(32));
     }
 }
 ?>
@@ -332,7 +523,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="alert alert-<?php echo $messageType === 'success' ? 'success' : 'danger'; ?>"><?php echo htmlspecialchars($message, ENT_QUOTES); ?></div>
             <?php endif; ?>
 
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" id="purchaseRequestForm">
+                <input type="hidden" name="form_token" value="<?php echo htmlspecialchars((string) ($_SESSION['buy_ticket_form_token'] ?? ''), ENT_QUOTES); ?>">
                 <div class="grid">
                     <div class="field full">
                         <label for="name">Full Name</label>
@@ -360,10 +552,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <p class="hint">Accepted files: JPG, PNG, WEBP, PDF, DOC, DOCX. Maximum size: 10MB.</p>
                     </div>
                 </div>
-                <button type="submit">Submit Purchase Request</button>
+                <button type="submit" id="submitPurchaseRequestBtn">Submit Purchase Request</button>
                 <p class="foot">By submitting, you confirm the payment details and contact information are accurate.</p>
             </form>
         </section>
     </div>
+
+    <script>
+    (function () {
+        const form = document.getElementById('purchaseRequestForm');
+        const submitBtn = document.getElementById('submitPurchaseRequestBtn');
+        if (!form || !submitBtn) {
+            return;
+        }
+
+        form.addEventListener('submit', function () {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+        });
+    })();
+    </script>
 </body>
 </html>

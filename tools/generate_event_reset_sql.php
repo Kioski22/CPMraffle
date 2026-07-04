@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../db.php';
 
-$outPath = __DIR__ . '/../rafflev2_event_reset.sql';
+$outPath = __DIR__ . '/../cpmrafflev2_event_reset.sql';
 $preserveDataTables = ['users', 'system_settings'];
 $resetDataTables = [
     'tickets',
@@ -35,7 +35,7 @@ function sql_value(mysqli $conn, $value): string
 }
 
 $dbResult = $conn->query('SELECT DATABASE() AS db_name');
-$dbName = 'rafflev2';
+$dbName = 'cpmrafflev2';
 if ($dbResult instanceof mysqli_result) {
     $row = $dbResult->fetch_assoc();
     $resolved = trim((string) ($row['db_name'] ?? ''));
