@@ -59,7 +59,7 @@ $prefix = ticket_current_number_prefix();
 
 $ticketNumbers = [];
 for ($i = $startNumber; $i <= $endNumber; $i++) {
-    $ticketNumbers[] = $prefix . '-' . str_pad((string) $i, 5, '0', STR_PAD_LEFT);
+    $ticketNumbers[] = $prefix . '_' . str_pad((string) $i, 5, '0', STR_PAD_LEFT);
 }
 
 $placeholders = implode(',', array_fill(0, count($ticketNumbers), '?'));
