@@ -85,6 +85,11 @@ if ($stmt) {
                 <h3>Chapter Allocation</h3>
                 <p>Allocate ticket ranges and manage chapter user accounts.</p>
             </a>
+            <a class="card" href="admin_chapter_list.php">
+                <i class="fas fa-table-list"></i>
+                <h3>Chapter Monitoring</h3>
+                <p>Track chapter ticket ownership and activation status.</p>
+            </a>
             <a class="card" href="participant_list.php">
                 <i class="fas fa-users"></i>
                 <h3>Buyer List</h3>
