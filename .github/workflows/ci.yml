@@ -75,3 +75,5 @@ jobs:
             uploads/buyer_pdfs/**
             uploads/profile_pictures/**
             ticket_secrets.php
+            db.php  
+            config.php

@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
-auth_require_roles(['admin', 'secretariat', 'chapter']);
+auth_require_roles(['admin', 'secretariat', 'chapter', 'cpmadmin']);
 
 include __DIR__ . '/db.php';
 require_once __DIR__ . '/buyer_schema.php';

@@ -80,6 +80,11 @@ if ($stmt) {
                 <h3>Bulk Buyer Upload</h3>
                 <p>Upload CSV files for large batch assignments.</p>
             </a>
+            <a class="card" href="admin_chapter_allocation.php">
+                <i class="fas fa-diagram-project"></i>
+                <h3>Chapter Allocation</h3>
+                <p>Allocate ticket ranges and manage chapter user accounts.</p>
+            </a>
             <a class="card" href="participant_list.php">
                 <i class="fas fa-users"></i>
                 <h3>Buyer List</h3>
