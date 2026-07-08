@@ -24,18 +24,34 @@ if ($user_result && mysqli_num_rows($user_result) > 0) {
 }
 
 // Function to get the next available ticket number safely
-function getNextTicketNumber($conn) {
-    $result = $conn->query("SELECT ticket_number FROM tickets ORDER BY ticket_number DESC LIMIT 1");
-    $lastTicketNumber = 0;
-
-    if ($result && $result->num_rows > 0) {
-        $lastTicket = $result->fetch_assoc();
-        if (preg_match('/[-_](\d{5})$/', (string) $lastTicket['ticket_number'], $matches)) {
-            $lastTicketNumber = (int)$matches[1]; // Extract last number
-        }
+function getNextTicketNumber(mysqli $conn, string $prefix): int {
+    $stmt = $conn->prepare("SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(ticket_number, '_', -1) AS UNSIGNED)), 0) AS last_ticket_number
+        FROM tickets
+        WHERE ticket_number REGEXP ?
+        FOR UPDATE");
+    if (!$stmt) {
+        throw new RuntimeException('Unable to determine the next ticket number.');
     }
 
-    return $lastTicketNumber + 1; // Increment safely
+    $pattern = '^' . preg_quote($prefix, '/') . '_[0-9]+$';
+    $stmt->bind_param('s', $pattern);
+
+    if (!$stmt->execute()) {
+        $error = $stmt->error;
+        $stmt->close();
+        throw new RuntimeException('Unable to determine the next ticket number: ' . $error);
+    }
+
+    $result = $stmt->get_result();
+    $lastTicketNumber = 0;
+
+    if ($result && ($row = $result->fetch_assoc())) {
+        $lastTicketNumber = (int) ($row['last_ticket_number'] ?? 0);
+    }
+
+    $stmt->close();
+
+    return $lastTicketNumber + 1;
 }
 
 // Function to generate a sequential ticket number with 5-digit format
@@ -44,7 +60,7 @@ function generateUniqueTicket($ticketNumber) {
 }
 
 // Function to create ticket records (QR image generation disabled).
-function generateTicket($ticketNumber, $conn) {
+function generateTicket(string $ticketNumber, mysqli $conn): int {
     global $appConfig;
 
     $encodedTicketNumber = base64_encode($ticketNumber);
@@ -54,9 +70,14 @@ function generateTicket($ticketNumber, $conn) {
 
     // Insert into 'tickets' table
     $stmt = $conn->prepare("INSERT INTO tickets (ticket_number, status, instruction_link, verification_link, created_at) VALUES (?, 'pending', ?, ?, NOW())");
+    if (!$stmt) {
+        throw new RuntimeException('Error preparing ticket insert: ' . $conn->error);
+    }
     $stmt->bind_param("sss", $ticketNumber, $instructionLink, $verificationLink);
     if (!$stmt->execute()) {
-        die("Error inserting ticket: " . $stmt->error);
+        $error = $stmt->error;
+        $stmt->close();
+        throw new RuntimeException('Error inserting ticket: ' . $error);
     }
     
     // Get the last inserted ticket ID
@@ -65,22 +86,40 @@ function generateTicket($ticketNumber, $conn) {
 
     // Insert into 'generated_tickets' table with qr_code_id as foreign key
     $generatedTicket = $conn->prepare("INSERT INTO generated_tickets (qr_code_id, ticket_number, instruction_link, verification_link, created_at, download) VALUES (?, ?, ?, ?, NOW(), 'no')");
+    if (!$generatedTicket) {
+        throw new RuntimeException('Error preparing generated ticket insert: ' . $conn->error);
+    }
     $generatedTicket->bind_param("isss", $qr_code_id, $ticketNumber, $instructionLink, $verificationLink);
     if (!$generatedTicket->execute()) {
-        die("Error inserting generated ticket: " . $generatedTicket->error);
+        $error = $generatedTicket->error;
+        $generatedTicket->close();
+        throw new RuntimeException('Error inserting generated ticket: ' . $error);
     }
     $generatedTicket->close();
+
+    return $qr_code_id;
 }
+
+$message = "";
 
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['num_tickets']) && $_POST['num_tickets'] > 0) {
     $numberOfTickets = (int)$_POST['num_tickets'];
-    $ticketStartNumber = getNextTicketNumber($conn);
+    $ticketPrefix = ticket_current_number_prefix();
 
     try {
+        if (!$conn->begin_transaction()) {
+            throw new RuntimeException('Unable to start ticket generation transaction.');
+        }
+        $ticketStartNumber = getNextTicketNumber($conn, $ticketPrefix);
+
         for ($i = 0; $i < $numberOfTickets; $i++) {
             $ticketNumber = generateUniqueTicket($ticketStartNumber + $i);
             generateTicket($ticketNumber, $conn);
+        }
+
+        if (!$conn->commit()) {
+            throw new RuntimeException('Unable to commit generated tickets.');
         }
         // Close the connection before redirecting
         $conn->close();
@@ -88,14 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['num_tickets']) && $_PO
         // Redirect to avoid form resubmission
         header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
         exit;
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
+        @$conn->rollback();
         $message = "Error generating tickets: " . $e->getMessage();
         $conn->close();
     }
 }
 
 // Check for a success flag in GET parameters to display a success message.
-$message = "";
 if (isset($_GET['success']) && $_GET['success'] == 1) {
     $message = "Tickets generated successfully!";
 }
