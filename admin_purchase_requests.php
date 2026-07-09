@@ -702,14 +702,13 @@ $ticketPrefix = getTicketNumberPrefix($conn);
                                                     <input type="text" name="starting_ticket_number" placeholder="Start no. e.g. 12000" required>
                                                     <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check"></i> Approve</button>
                                                 </form>
-                                                <form method="POST" class="mt-1 reject-form"
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-danger btn-sm mt-1 open-reject-modal"
                                                     data-request-id="<?php echo (int) ($request['id'] ?? 0); ?>"
                                                     data-buyer-name="<?php echo htmlspecialchars((string) ($request['name'] ?? ''), ENT_QUOTES); ?>">
-                                                    <input type="hidden" name="action" value="reject_request">
-                                                    <input type="hidden" name="request_id" value="<?php echo (int) ($request['id'] ?? 0); ?>">
-                                                    <input type="text" name="rejection_reason" class="form-control form-control-sm mb-1" placeholder="Reason for rejection" maxlength="255" required>
-                                                    <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-times"></i> Reject</button>
-                                                </form>
+                                                    <i class="fas fa-times"></i> Reject
+                                                </button>
                                             <?php elseif ($status === 'approved'): ?>
                                                 <form method="POST">
                                                     <input type="hidden" name="action" value="resend_approval">
@@ -782,18 +781,32 @@ $ticketPrefix = getTicketNumberPrefix($conn);
 <div class="modal-overlay" id="rejectModal" aria-hidden="true">
     <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
         <div class="confirm-head" id="rejectModalTitle">Confirm Request Rejection</div>
-        <div class="confirm-body">
-            <p class="mb-2">You are about to reject request <strong>#<span id="rejectRequestId">0</span></strong> for <strong><span id="rejectBuyerName">Buyer</span></strong>.</p>
+        <div class="confirm-body" id="rejectStepReason">
+            <p class="mb-2">Enter the rejection reason for request <strong>#<span id="rejectRequestId">0</span></strong> (<strong><span id="rejectBuyerName">Buyer</span></strong>).</p>
+            <label for="rejectReasonInput" class="form-label mb-1"><strong>Rejection reason</strong></label>
+            <textarea id="rejectReasonInput" class="form-control" maxlength="255" placeholder="Type the reason that will be emailed to the requester." required></textarea>
+            <div class="note">Maximum 255 characters. This exact message will be sent to the requester.</div>
+        </div>
+        <div class="confirm-body" id="rejectStepConfirm" style="display:none;">
+            <p class="mb-2">You are about to reject request <strong>#<span id="rejectConfirmRequestId">0</span></strong> for <strong><span id="rejectConfirmBuyerName">Buyer</span></strong>.</p>
             <p class="mb-2"><strong>Reason to send:</strong></p>
             <div class="alert alert-warning py-2 px-3 mb-2" id="rejectReasonPreview">-</div>
-            <p class="mb-0 text-danger"><strong>Important:</strong> The requester will receive this rejection reason in the rejection email.</p>
+            <p class="mb-0 text-danger"><strong>Important:</strong> This action will send a rejection email with this reason.</p>
         </div>
         <div class="confirm-actions">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelRejectBtn">Cancel</button>
-            <button type="button" class="btn btn-danger btn-sm" id="confirmRejectBtn"><i class="fas fa-times"></i> Confirm Rejection</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="rejectBackBtn" style="display:none;">Back</button>
+            <button type="button" class="btn btn-primary btn-sm" id="rejectNextBtn"><i class="fas fa-arrow-right"></i> Continue</button>
+            <button type="button" class="btn btn-danger btn-sm" id="confirmRejectBtn" style="display:none;"><i class="fas fa-times"></i> Confirm Rejection</button>
         </div>
     </div>
 </div>
+
+<form method="POST" id="rejectSubmitForm" style="display:none;">
+    <input type="hidden" name="action" value="reject_request">
+    <input type="hidden" name="request_id" id="rejectSubmitRequestId" value="0">
+    <input type="hidden" name="rejection_reason" id="rejectSubmitReason" value="">
+</form>
 
 <script>
 (function () {
@@ -817,10 +830,21 @@ $ticketPrefix = getTicketNumberPrefix($conn);
     const rejectModal = document.getElementById('rejectModal');
     const rejectRequestId = document.getElementById('rejectRequestId');
     const rejectBuyerName = document.getElementById('rejectBuyerName');
+    const rejectConfirmRequestId = document.getElementById('rejectConfirmRequestId');
+    const rejectConfirmBuyerName = document.getElementById('rejectConfirmBuyerName');
+    const rejectReasonInput = document.getElementById('rejectReasonInput');
     const rejectReasonPreview = document.getElementById('rejectReasonPreview');
+    const rejectStepReason = document.getElementById('rejectStepReason');
+    const rejectStepConfirm = document.getElementById('rejectStepConfirm');
     const cancelRejectBtn = document.getElementById('cancelRejectBtn');
+    const rejectBackBtn = document.getElementById('rejectBackBtn');
+    const rejectNextBtn = document.getElementById('rejectNextBtn');
     const confirmRejectBtn = document.getElementById('confirmRejectBtn');
-    let pendingRejectForm = null;
+    const rejectSubmitForm = document.getElementById('rejectSubmitForm');
+    const rejectSubmitRequestId = document.getElementById('rejectSubmitRequestId');
+    const rejectSubmitReason = document.getElementById('rejectSubmitReason');
+    let pendingRejectRequestId = '0';
+    let pendingRejectBuyerName = 'Buyer';
 
     function closeModal() {
         modal.classList.remove('active');
@@ -831,7 +855,44 @@ $ticketPrefix = getTicketNumberPrefix($conn);
     function closeRejectModal() {
         rejectModal.classList.remove('active');
         rejectModal.setAttribute('aria-hidden', 'true');
-        pendingRejectForm = null;
+        pendingRejectRequestId = '0';
+        pendingRejectBuyerName = 'Buyer';
+        rejectRequestId.textContent = '0';
+        rejectBuyerName.textContent = 'Buyer';
+        rejectConfirmRequestId.textContent = '0';
+        rejectConfirmBuyerName.textContent = 'Buyer';
+        rejectReasonInput.value = '';
+        rejectReasonPreview.textContent = '-';
+        rejectStepReason.style.display = '';
+        rejectStepConfirm.style.display = 'none';
+        rejectBackBtn.style.display = 'none';
+        rejectNextBtn.style.display = '';
+        confirmRejectBtn.style.display = 'none';
+    }
+
+    function goToRejectStepConfirm() {
+        const reason = rejectReasonInput.value.trim();
+        if (reason === '') {
+            rejectReasonInput.reportValidity();
+            rejectReasonInput.focus();
+            return;
+        }
+
+        rejectReasonPreview.textContent = reason;
+        rejectStepReason.style.display = 'none';
+        rejectStepConfirm.style.display = '';
+        rejectBackBtn.style.display = '';
+        rejectNextBtn.style.display = 'none';
+        confirmRejectBtn.style.display = '';
+    }
+
+    function goToRejectStepReason() {
+        rejectStepReason.style.display = '';
+        rejectStepConfirm.style.display = 'none';
+        rejectBackBtn.style.display = 'none';
+        rejectNextBtn.style.display = '';
+        confirmRejectBtn.style.display = 'none';
+        rejectReasonInput.focus();
     }
 
     document.querySelectorAll('.approve-form').forEach((form) => {
@@ -876,31 +937,33 @@ $ticketPrefix = getTicketNumberPrefix($conn);
         submittingForm.submit();
     });
 
-    document.querySelectorAll('.reject-form').forEach((form) => {
-        form.addEventListener('submit', function (event) {
-            event.preventDefault();
+    document.querySelectorAll('.open-reject-modal').forEach((button) => {
+        button.addEventListener('click', function () {
+            pendingRejectRequestId = button.getAttribute('data-request-id') || '0';
+            pendingRejectBuyerName = button.getAttribute('data-buyer-name') || 'Buyer';
 
-            const reasonInput = form.querySelector('input[name="rejection_reason"]');
-            const reason = reasonInput ? reasonInput.value.trim() : '';
-            if (reason === '') {
-                if (reasonInput) {
-                    reasonInput.reportValidity();
-                    reasonInput.focus();
-                }
-                return;
-            }
+            rejectRequestId.textContent = pendingRejectRequestId;
+            rejectBuyerName.textContent = pendingRejectBuyerName;
+            rejectConfirmRequestId.textContent = pendingRejectRequestId;
+            rejectConfirmBuyerName.textContent = pendingRejectBuyerName;
+            rejectReasonInput.value = '';
+            rejectReasonPreview.textContent = '-';
 
-            pendingRejectForm = form;
-            rejectRequestId.textContent = form.getAttribute('data-request-id') || '0';
-            rejectBuyerName.textContent = form.getAttribute('data-buyer-name') || 'Buyer';
-            rejectReasonPreview.textContent = reason;
+            rejectStepReason.style.display = '';
+            rejectStepConfirm.style.display = 'none';
+            rejectBackBtn.style.display = 'none';
+            rejectNextBtn.style.display = '';
+            confirmRejectBtn.style.display = 'none';
 
             rejectModal.classList.add('active');
             rejectModal.setAttribute('aria-hidden', 'false');
+            rejectReasonInput.focus();
         });
     });
 
     cancelRejectBtn.addEventListener('click', closeRejectModal);
+    rejectBackBtn.addEventListener('click', goToRejectStepReason);
+    rejectNextBtn.addEventListener('click', goToRejectStepConfirm);
     rejectModal.addEventListener('click', function (event) {
         if (event.target === rejectModal) {
             closeRejectModal();
@@ -908,14 +971,16 @@ $ticketPrefix = getTicketNumberPrefix($conn);
     });
 
     confirmRejectBtn.addEventListener('click', function () {
-        if (!pendingRejectForm) {
+        const reason = rejectReasonInput.value.trim();
+        if (pendingRejectRequestId === '0' || reason === '') {
             closeRejectModal();
             return;
         }
 
-        const submittingForm = pendingRejectForm;
+        rejectSubmitRequestId.value = pendingRejectRequestId;
+        rejectSubmitReason.value = reason;
         closeRejectModal();
-        submittingForm.submit();
+        rejectSubmitForm.submit();
     });
 
     const requestSearch = document.getElementById('requestSearch');
