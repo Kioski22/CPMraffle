@@ -86,8 +86,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'warning';
             }
         } elseif ($action === 'reject_request') {
-            onsite_reject_purchase_request($conn, $requestId, $approverId);
-            $message = 'Request #' . $requestId . ' rejected.';
+            $rejectionReason = trim((string) ($_POST['rejection_reason'] ?? ''));
+            onsite_reject_purchase_request($conn, $requestId, $approverId, $rejectionReason);
+
+            $request = onsite_fetch_purchase_request($conn, $requestId);
+            if (!is_array($request)) {
+                throw new RuntimeException('Request rejected but could not be reloaded for email notification.');
+            }
+
+            try {
+                $mailResult = onsite_send_rejection_email($conn, $appConfig, $request);
+                $message = 'Request #' . $requestId . ' rejected and email sent via ' . (string) ($mailResult['delivery_method'] ?? 'Gmail API') . '.';
+                $messageType = 'success';
+            } catch (Throwable $mailException) {
+                $message = 'Request #' . $requestId . ' rejected, but sending the rejection email failed: ' . $mailException->getMessage();
+                $messageType = 'warning';
+            }
+        } elseif ($action === 'resend_approval') {
+            $mailResult = onsite_resend_approval_email($conn, $appConfig, $requestId);
+            $message = 'Approval email resent for request #' . $requestId . ' via ' . (string) ($mailResult['delivery_method'] ?? 'Gmail API') . '.';
+            $messageType = 'success';
+        } elseif ($action === 'resend_rejection') {
+            $mailResult = onsite_resend_rejection_email($conn, $appConfig, $requestId);
+            $message = 'Rejection email resent for request #' . $requestId . ' via ' . (string) ($mailResult['delivery_method'] ?? 'Gmail API') . '.';
             $messageType = 'success';
         } else {
             throw new RuntimeException('Unsupported action.');
@@ -658,7 +679,15 @@ $ticketPrefix = getTicketNumberPrefix($conn);
                                                 <span class="text-muted">N/A</span>
                                             <?php endif; ?>
                                         </td>
-                                        <td><span class="status-pill <?php echo htmlspecialchars($statusClass, ENT_QUOTES); ?>"><?php echo htmlspecialchars(ucfirst($status), ENT_QUOTES); ?></span></td>
+                                        <td>
+                                            <span class="status-pill <?php echo htmlspecialchars($statusClass, ENT_QUOTES); ?>"><?php echo htmlspecialchars(ucfirst($status), ENT_QUOTES); ?></span>
+                                            <?php if ($status === 'rejected'): ?>
+                                                <?php $reason = trim((string) ($request['rejection_reason'] ?? '')); ?>
+                                                <?php if ($reason !== ''): ?>
+                                                    <div class="text-muted small mt-1"><strong>Reason:</strong> <?php echo nl2br(htmlspecialchars($reason, ENT_QUOTES)); ?></div>
+                                                <?php endif; ?>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><span class="ticket-range"><?php echo htmlspecialchars((string) ($request['assigned_tickets_range'] ?? '-'), ENT_QUOTES); ?></span></td>
                                         <td><?php echo htmlspecialchars($approverName !== '' ? $approverName : '-', ENT_QUOTES); ?></td>
                                         <td><?php echo htmlspecialchars((string) ($request['created_at'] ?? ''), ENT_QUOTES); ?></td>
@@ -673,10 +702,25 @@ $ticketPrefix = getTicketNumberPrefix($conn);
                                                     <input type="text" name="starting_ticket_number" placeholder="Start no. e.g. 12000" required>
                                                     <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check"></i> Approve</button>
                                                 </form>
-                                                <form method="POST" class="mt-1">
+                                                <form method="POST" class="mt-1 reject-form"
+                                                    data-request-id="<?php echo (int) ($request['id'] ?? 0); ?>"
+                                                    data-buyer-name="<?php echo htmlspecialchars((string) ($request['name'] ?? ''), ENT_QUOTES); ?>">
                                                     <input type="hidden" name="action" value="reject_request">
                                                     <input type="hidden" name="request_id" value="<?php echo (int) ($request['id'] ?? 0); ?>">
+                                                    <input type="text" name="rejection_reason" class="form-control form-control-sm mb-1" placeholder="Reason for rejection" maxlength="255" required>
                                                     <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-times"></i> Reject</button>
+                                                </form>
+                                            <?php elseif ($status === 'approved'): ?>
+                                                <form method="POST">
+                                                    <input type="hidden" name="action" value="resend_approval">
+                                                    <input type="hidden" name="request_id" value="<?php echo (int) ($request['id'] ?? 0); ?>">
+                                                    <button type="submit" class="btn btn-outline-primary btn-sm"><i class="fas fa-paper-plane"></i> Resend Email</button>
+                                                </form>
+                                            <?php elseif ($status === 'rejected'): ?>
+                                                <form method="POST">
+                                                    <input type="hidden" name="action" value="resend_rejection">
+                                                    <input type="hidden" name="request_id" value="<?php echo (int) ($request['id'] ?? 0); ?>">
+                                                    <button type="submit" class="btn btn-outline-primary btn-sm"><i class="fas fa-paper-plane"></i> Resend Email</button>
                                                 </form>
                                             <?php else: ?>
                                                 <span class="text-muted small">No actions available</span>
@@ -735,6 +779,22 @@ $ticketPrefix = getTicketNumberPrefix($conn);
     </div>
 </div>
 
+<div class="modal-overlay" id="rejectModal" aria-hidden="true">
+    <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
+        <div class="confirm-head" id="rejectModalTitle">Confirm Request Rejection</div>
+        <div class="confirm-body">
+            <p class="mb-2">You are about to reject request <strong>#<span id="rejectRequestId">0</span></strong> for <strong><span id="rejectBuyerName">Buyer</span></strong>.</p>
+            <p class="mb-2"><strong>Reason to send:</strong></p>
+            <div class="alert alert-warning py-2 px-3 mb-2" id="rejectReasonPreview">-</div>
+            <p class="mb-0 text-danger"><strong>Important:</strong> The requester will receive this rejection reason in the rejection email.</p>
+        </div>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelRejectBtn">Cancel</button>
+            <button type="button" class="btn btn-danger btn-sm" id="confirmRejectBtn"><i class="fas fa-times"></i> Confirm Rejection</button>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     const togglePaymentImagesBtn = document.getElementById('togglePaymentImagesBtn');
@@ -754,10 +814,24 @@ $ticketPrefix = getTicketNumberPrefix($conn);
     const confirmBtn = document.getElementById('confirmApproveBtn');
     let pendingForm = null;
 
+    const rejectModal = document.getElementById('rejectModal');
+    const rejectRequestId = document.getElementById('rejectRequestId');
+    const rejectBuyerName = document.getElementById('rejectBuyerName');
+    const rejectReasonPreview = document.getElementById('rejectReasonPreview');
+    const cancelRejectBtn = document.getElementById('cancelRejectBtn');
+    const confirmRejectBtn = document.getElementById('confirmRejectBtn');
+    let pendingRejectForm = null;
+
     function closeModal() {
         modal.classList.remove('active');
         modal.setAttribute('aria-hidden', 'true');
         pendingForm = null;
+    }
+
+    function closeRejectModal() {
+        rejectModal.classList.remove('active');
+        rejectModal.setAttribute('aria-hidden', 'true');
+        pendingRejectForm = null;
     }
 
     document.querySelectorAll('.approve-form').forEach((form) => {
@@ -799,6 +873,48 @@ $ticketPrefix = getTicketNumberPrefix($conn);
 
         const submittingForm = pendingForm;
         closeModal();
+        submittingForm.submit();
+    });
+
+    document.querySelectorAll('.reject-form').forEach((form) => {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const reasonInput = form.querySelector('input[name="rejection_reason"]');
+            const reason = reasonInput ? reasonInput.value.trim() : '';
+            if (reason === '') {
+                if (reasonInput) {
+                    reasonInput.reportValidity();
+                    reasonInput.focus();
+                }
+                return;
+            }
+
+            pendingRejectForm = form;
+            rejectRequestId.textContent = form.getAttribute('data-request-id') || '0';
+            rejectBuyerName.textContent = form.getAttribute('data-buyer-name') || 'Buyer';
+            rejectReasonPreview.textContent = reason;
+
+            rejectModal.classList.add('active');
+            rejectModal.setAttribute('aria-hidden', 'false');
+        });
+    });
+
+    cancelRejectBtn.addEventListener('click', closeRejectModal);
+    rejectModal.addEventListener('click', function (event) {
+        if (event.target === rejectModal) {
+            closeRejectModal();
+        }
+    });
+
+    confirmRejectBtn.addEventListener('click', function () {
+        if (!pendingRejectForm) {
+            closeRejectModal();
+            return;
+        }
+
+        const submittingForm = pendingRejectForm;
+        closeRejectModal();
         submittingForm.submit();
     });
 

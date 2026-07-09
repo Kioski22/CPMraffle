@@ -53,6 +53,8 @@ if (!function_exists('onsite_ensure_schema')) {
         onsite_add_column_if_missing($conn, 'ticket_purchase_requests', "drive_file_id VARCHAR(255) NULL");
         onsite_add_column_if_missing($conn, 'ticket_purchase_requests', "approved_by_admin_id INT(11) NULL");
         onsite_add_column_if_missing($conn, 'ticket_purchase_requests', "assigned_tickets_range VARCHAR(255) NULL");
+        onsite_add_column_if_missing($conn, 'ticket_purchase_requests', "rejection_reason VARCHAR(255) NULL");
+        onsite_add_column_if_missing($conn, 'ticket_purchase_requests', "buyer_id INT(11) NULL");
 
         $conn->query("CREATE TABLE IF NOT EXISTS system_settings (
             setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
@@ -637,12 +639,12 @@ if (!function_exists('onsite_approve_purchase_request')) {
 
             $assignedRange = $ticketNumbers[0] . ' to ' . $ticketNumbers[count($ticketNumbers) - 1];
             $approveStmt = $conn->prepare('UPDATE ticket_purchase_requests
-                SET status = "approved", approved_by_admin_id = ?, assigned_tickets_range = ?, updated_at = NOW()
+                SET status = "approved", approved_by_admin_id = ?, assigned_tickets_range = ?, buyer_id = ?, rejection_reason = NULL, updated_at = NOW()
                 WHERE id = ?');
             if (!$approveStmt) {
                 throw new RuntimeException('Unable to update purchase request status.');
             }
-            $approveStmt->bind_param('isi', $approverId, $assignedRange, $requestId);
+            $approveStmt->bind_param('isii', $approverId, $assignedRange, $buyerId, $requestId);
             $approveStmt->execute();
             $approveStmt->close();
 
@@ -684,7 +686,7 @@ if (!function_exists('onsite_approve_purchase_request')) {
 }
 
 if (!function_exists('onsite_reject_purchase_request')) {
-    function onsite_reject_purchase_request(mysqli $conn, int $requestId, int $approverId): void
+    function onsite_reject_purchase_request(mysqli $conn, int $requestId, int $approverId, string $rejectionReason): void
     {
         onsite_ensure_schema($conn);
 
@@ -692,14 +694,23 @@ if (!function_exists('onsite_reject_purchase_request')) {
             throw new RuntimeException('Invalid purchase request id.');
         }
 
+        $rejectionReason = trim($rejectionReason);
+        if ($rejectionReason === '') {
+            throw new RuntimeException('Rejection reason is required.');
+        }
+        $reasonLength = function_exists('mb_strlen') ? mb_strlen($rejectionReason) : strlen($rejectionReason);
+        if ($reasonLength > 255) {
+            throw new RuntimeException('Rejection reason must be 255 characters or fewer.');
+        }
+
         $stmt = $conn->prepare('UPDATE ticket_purchase_requests
-            SET status = "rejected", approved_by_admin_id = ?, updated_at = NOW()
+            SET status = "rejected", approved_by_admin_id = ?, rejection_reason = ?, buyer_id = NULL, assigned_tickets_range = NULL, updated_at = NOW()
             WHERE id = ? AND status = "pending"');
         if (!$stmt) {
             throw new RuntimeException('Unable to reject purchase request.');
         }
 
-        $stmt->bind_param('ii', $approverId, $requestId);
+        $stmt->bind_param('isi', $approverId, $rejectionReason, $requestId);
         $stmt->execute();
         $affected = (int) $stmt->affected_rows;
         $stmt->close();
@@ -707,5 +718,157 @@ if (!function_exists('onsite_reject_purchase_request')) {
         if ($affected <= 0) {
             throw new RuntimeException('Only pending requests can be rejected.');
         }
+    }
+}
+
+if (!function_exists('onsite_send_rejection_email')) {
+    function onsite_send_rejection_email(mysqli $conn, array $appConfig, array $request): array
+    {
+        onsite_ensure_schema($conn);
+
+        $toName = trim((string) ($request['name'] ?? ''));
+        $toEmail = trim((string) ($request['email'] ?? ''));
+        $rejectionReason = trim((string) ($request['rejection_reason'] ?? ''));
+        $chapter = trim((string) ($request['chapter'] ?? ''));
+        $quantity = (int) ($request['ticket_quantity'] ?? 0);
+        $mailConfig = $appConfig['mail'] ?? [];
+        $appName = trim((string) ($mailConfig['from_name'] ?? 'CPM Raffle Team'));
+
+        if ($toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new RuntimeException('Request does not have a valid buyer email address.');
+        }
+        if ($rejectionReason === '') {
+            throw new RuntimeException('Missing rejection reason for this request.');
+        }
+
+        $safeName = htmlspecialchars($toName !== '' ? $toName : 'Buyer', ENT_QUOTES, 'UTF-8');
+        $safeChapter = htmlspecialchars($chapter, ENT_QUOTES, 'UTF-8');
+        $safeReason = nl2br(htmlspecialchars($rejectionReason, ENT_QUOTES, 'UTF-8'));
+
+        $subject = 'Update on your onsite raffle ticket purchase request';
+        $body = '<p>Hello ' . $safeName . ',</p>'
+            . '<p>Thank you for your onsite purchase request. Unfortunately, your request was not approved at this time.</p>'
+            . '<p><strong>Request details:</strong></p>'
+            . '<ul>'
+            . '<li><strong>Chapter:</strong> ' . ($safeChapter !== '' ? $safeChapter : '-') . '</li>'
+            . '<li><strong>Ticket quantity:</strong> ' . (int) $quantity . '</li>'
+            . '</ul>'
+            . '<p><strong>Reason:</strong><br>' . $safeReason . '</p>'
+            . '<p>If you have questions, please contact support or submit a new request with updated details.</p>'
+            . '<p>Regards,<br>' . htmlspecialchars($appName, ENT_QUOTES, 'UTF-8') . '</p>';
+
+        $deliveryMethod = ticket_send_gmail_message($appConfig, $toName, $toEmail, [
+            'subject' => $subject,
+            'body' => $body,
+            'format' => 'html',
+            'content_type' => 'text/html; charset=UTF-8',
+        ]);
+
+        return [
+            'delivery_method' => $deliveryMethod,
+            'to_email' => $toEmail,
+            'request_id' => (int) ($request['id'] ?? 0),
+        ];
+    }
+}
+
+if (!function_exists('onsite_resend_approval_email')) {
+    function onsite_resend_approval_email(mysqli $conn, array $appConfig, int $requestId): array
+    {
+        onsite_ensure_schema($conn);
+
+        if ($requestId <= 0) {
+            throw new RuntimeException('Invalid purchase request id.');
+        }
+
+        $request = onsite_fetch_purchase_request($conn, $requestId);
+        if (!is_array($request)) {
+            throw new RuntimeException('Purchase request not found.');
+        }
+        if (strtolower((string) ($request['status'] ?? '')) !== 'approved') {
+            throw new RuntimeException('Only approved requests can resend approval emails.');
+        }
+
+        $buyerId = (int) ($request['buyer_id'] ?? 0);
+        if ($buyerId <= 0) {
+            throw new RuntimeException('Approved request is missing its linked buyer record.');
+        }
+
+        $buyerStmt = $conn->prepare('SELECT id, full_name, email, chapter, buyer_type FROM buyers WHERE id = ? LIMIT 1');
+        if (!$buyerStmt) {
+            throw new RuntimeException('Unable to load buyer details for resend.');
+        }
+        $buyerStmt->bind_param('i', $buyerId);
+        $buyerStmt->execute();
+        $buyerResult = $buyerStmt->get_result();
+        $buyer = $buyerResult ? $buyerResult->fetch_assoc() : null;
+        $buyerStmt->close();
+
+        if (!is_array($buyer)) {
+            throw new RuntimeException('Linked buyer record no longer exists.');
+        }
+
+        $ticketsStmt = $conn->prepare('SELECT ticket_number FROM ticket_assignments WHERE buyer_id = ? ORDER BY CAST(SUBSTRING_INDEX(ticket_number, "-", -1) AS UNSIGNED), ticket_number ASC');
+        if (!$ticketsStmt) {
+            throw new RuntimeException('Unable to load assigned ticket numbers.');
+        }
+        $ticketsStmt->bind_param('i', $buyerId);
+        $ticketsStmt->execute();
+        $ticketsResult = $ticketsStmt->get_result();
+
+        $ticketNumbers = [];
+        while ($row = $ticketsResult ? $ticketsResult->fetch_assoc() : null) {
+            if (!is_array($row)) {
+                break;
+            }
+
+            $ticketNumber = trim((string) ($row['ticket_number'] ?? ''));
+            if ($ticketNumber !== '') {
+                $ticketNumbers[] = $ticketNumber;
+            }
+        }
+        $ticketsStmt->close();
+
+        if ($ticketNumbers === []) {
+            throw new RuntimeException('No assigned tickets found for this approved request.');
+        }
+
+        $sendResult = ticket_send_buyer_assignment_email($conn, $appConfig, $buyer, $ticketNumbers);
+
+        $newStatus = buyerDetermineStatus(buyerFetchActivationCounts($conn, $buyerId), true);
+        $markSent = $conn->prepare('UPDATE buyers SET status = ?, email_sent_at = NOW(), updated_at = NOW() WHERE id = ?');
+        if ($markSent) {
+            $markSent->bind_param('si', $newStatus, $buyerId);
+            $markSent->execute();
+            $markSent->close();
+        }
+
+        return [
+            'request_id' => $requestId,
+            'buyer_id' => $buyerId,
+            'delivery_method' => (string) ($sendResult['delivery_method'] ?? 'Gmail API'),
+            'ticket_count' => count($ticketNumbers),
+        ];
+    }
+}
+
+if (!function_exists('onsite_resend_rejection_email')) {
+    function onsite_resend_rejection_email(mysqli $conn, array $appConfig, int $requestId): array
+    {
+        onsite_ensure_schema($conn);
+
+        if ($requestId <= 0) {
+            throw new RuntimeException('Invalid purchase request id.');
+        }
+
+        $request = onsite_fetch_purchase_request($conn, $requestId);
+        if (!is_array($request)) {
+            throw new RuntimeException('Purchase request not found.');
+        }
+        if (strtolower((string) ($request['status'] ?? '')) !== 'rejected') {
+            throw new RuntimeException('Only rejected requests can resend rejection emails.');
+        }
+
+        return onsite_send_rejection_email($conn, $appConfig, $request);
     }
 }
