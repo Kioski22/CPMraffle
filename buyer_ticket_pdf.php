@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
-auth_require_roles(['admin', 'secretariat']);
+auth_require_roles(['admin', 'secretariat', 'cpmadmin']);
 
 require 'db.php';
 require_once __DIR__ . '/buyer_pdf_generator.php';
