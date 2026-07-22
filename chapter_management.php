@@ -21,6 +21,7 @@ $createdChapterId = 0;
 $chapterName = '';
 $presidentEmail = '';
 $username = '';
+$chapterRows = [];
 
 function chapter_generate_password(int $length = 12): string
 {
@@ -35,64 +36,87 @@ function chapter_generate_password(int $length = 12): string
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string) ($_POST['action'] ?? 'create_chapter'));
+
     try {
-        $chapterName = trim((string) ($_POST['chapter_name'] ?? ''));
-        $presidentEmail = trim((string) ($_POST['president_email'] ?? ''));
-        $username = trim((string) ($_POST['username'] ?? $presidentEmail));
-        $password = trim((string) ($_POST['password'] ?? ''));
+        if ($action === 'update_remarks') {
+            $chapterId = (int) ($_POST['chapter_id'] ?? 0);
+            $remarks = trim((string) ($_POST['remarks'] ?? ''));
+            if ($chapterId <= 0) {
+                throw new RuntimeException('Invalid chapter selected.');
+            }
 
-        if ($chapterName === '') {
-            throw new RuntimeException('Chapter name is required.' );
-        }
-        if ($presidentEmail === '' || !filter_var($presidentEmail, FILTER_VALIDATE_EMAIL)) {
-            throw new RuntimeException('A valid president email is required.');
-        }
-        if ($username === '') {
-            $username = $presidentEmail;
-        }
-        if ($password === '') {
-            $password = chapter_generate_password();
-        }
+            $remarksValue = $remarks !== '' ? $remarks : null;
+            $remarksStmt = $conn->prepare("UPDATE users SET remarks = ?, updated_at = NOW() WHERE id = ? AND LOWER(role) = 'chapter'");
+            if (!$remarksStmt) {
+                throw new RuntimeException('Unable to update chapter remarks.');
+            }
 
-        $checkStmt = $conn->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1');
-        if (!$checkStmt) {
-            throw new RuntimeException('Unable to validate existing accounts.');
+            $remarksStmt->bind_param('si', $remarksValue, $chapterId);
+            $remarksStmt->execute();
+            $remarksStmt->close();
+
+            $flashMessage = 'Chapter remarks updated successfully.';
+            $flashType = 'success';
+        } else {
+            $chapterName = trim((string) ($_POST['chapter_name'] ?? ''));
+            $presidentEmail = trim((string) ($_POST['president_email'] ?? ''));
+            $username = trim((string) ($_POST['username'] ?? $presidentEmail));
+            $password = trim((string) ($_POST['password'] ?? ''));
+
+            if ($chapterName === '') {
+                throw new RuntimeException('Chapter name is required.');
+            }
+            if ($presidentEmail === '' || !filter_var($presidentEmail, FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException('A valid president email is required.');
+            }
+            if ($username === '') {
+                $username = $presidentEmail;
+            }
+            if ($password === '') {
+                $password = chapter_generate_password();
+            }
+
+            $checkStmt = $conn->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1');
+            if (!$checkStmt) {
+                throw new RuntimeException('Unable to validate existing accounts.');
+            }
+            $checkStmt->bind_param('s', $username);
+            $checkStmt->execute();
+            $existing = $checkStmt->get_result();
+            $checkStmt->close();
+            if ($existing && $existing->num_rows > 0) {
+                throw new RuntimeException('A chapter account with this username already exists.');
+            }
+
+            $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+            $conn->begin_transaction();
+
+            $insertStmt = $conn->prepare('INSERT INTO users (name, username, password, role, email, chapter_name) VALUES (?, ?, ?, ?, ?, ?)');
+            if (!$insertStmt) {
+                throw new RuntimeException('Unable to create chapter account.');
+            }
+
+            $role = 'chapter';
+            $insertStmt->bind_param('ssssss', $chapterName, $username, $hashedPassword, $role, $presidentEmail, $chapterName);
+            $insertStmt->execute();
+            $createdChapterId = (int) $insertStmt->insert_id;
+            $insertStmt->close();
+            $conn->commit();
+
+            ticket_send_chapter_invitation($appConfig, [
+                'chapter_name' => $chapterName,
+                'president_email' => $presidentEmail,
+                'username' => $username,
+                'password' => $password,
+                'ticket_range_summary' => 'Pending allocation',
+                'ticket_count' => '0',
+            ]);
+
+            $generatedPassword = $password;
+            $flashMessage = 'Chapter account created successfully and invitation sent.';
+            $flashType = 'success';
         }
-        $checkStmt->bind_param('s', $username);
-        $checkStmt->execute();
-        $existing = $checkStmt->get_result();
-        $checkStmt->close();
-        if ($existing && $existing->num_rows > 0) {
-            throw new RuntimeException('A chapter account with this username already exists.');
-        }
-
-        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-        $conn->begin_transaction();
-
-        $insertStmt = $conn->prepare('INSERT INTO users (name, username, password, role, email, chapter_name) VALUES (?, ?, ?, ?, ?, ?)');
-        if (!$insertStmt) {
-            throw new RuntimeException('Unable to create chapter account.');
-        }
-
-        $role = 'chapter';
-        $insertStmt->bind_param('ssssss', $chapterName, $username, $hashedPassword, $role, $presidentEmail, $chapterName);
-        $insertStmt->execute();
-        $createdChapterId = (int) $insertStmt->insert_id;
-        $insertStmt->close();
-        $conn->commit();
-
-        ticket_send_chapter_invitation($appConfig, [
-            'chapter_name' => $chapterName,
-            'president_email' => $presidentEmail,
-            'username' => $username,
-            'password' => $password,
-            'ticket_range_summary' => 'Pending allocation',
-            'ticket_count' => '0',
-        ]);
-
-        $generatedPassword = $password;
-        $flashMessage = 'Chapter account created successfully and invitation sent.';
-        $flashType = 'success';
     } catch (Throwable $exception) {
         if ($conn->errno === 0 && $conn->more_results()) {
             $conn->rollback();
@@ -102,6 +126,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashMessage = $exception->getMessage();
         $flashType = 'danger';
     }
+}
+
+$chapterListSql = "SELECT
+        u.id,
+        COALESCE(u.chapter_name, u.name, u.username) AS chapter_name,
+        u.username,
+        u.email,
+        u.remarks,
+        COUNT(t.id) AS allocated_tickets,
+        SUM(CASE WHEN LOWER(COALESCE(t.status, 'pending')) = 'activated' THEN 1 ELSE 0 END) AS activated_tickets
+    FROM users u
+    LEFT JOIN tickets t ON t.assigned_chapter_id = u.id
+    WHERE LOWER(u.role) = 'chapter'
+    GROUP BY u.id
+    ORDER BY COALESCE(u.chapter_name, u.name, u.username) ASC";
+$chapterListResult = $conn->query($chapterListSql);
+if ($chapterListResult instanceof mysqli_result) {
+    while ($chapterRow = $chapterListResult->fetch_assoc()) {
+        $chapterRows[] = $chapterRow;
+    }
+    $chapterListResult->close();
 }
 ?>
 <!DOCTYPE html>
@@ -171,12 +216,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 18px;
             box-shadow: 0 18px 60px rgba(40, 53, 85, 0.12);
         }
+        .table-card {
+            margin-top: 20px;
+            padding: 20px;
+        }
+        .table thead th {
+            background: linear-gradient(135deg, #283555 0%, #3a4a6f 100%);
+            color: #ffffff;
+            border: none;
+            white-space: nowrap;
+        }
         .hero { padding: 28px; margin-bottom: 20px; }
         .hero h1 { margin: 0 0 10px; color: #283555; font-size: 1.9rem; font-weight: 700; }
         .alert { border-radius: 12px; }
         .form-label { font-weight: 600; }
         .btn-primary { background: #283555; border-color: #283555; }
         .btn-primary:hover { background: #1f2943; border-color: #1f2943; }
+        .btn-outline-secondary:hover { background: #eef2ff; }
         .muted { color: #6b7280; }
         code { background: #f8fafc; padding: 2px 6px; border-radius: 6px; }
         @media (max-width: 768px) {
@@ -212,6 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <div class="card p-4">
         <form method="POST">
+            <input type="hidden" name="action" value="create_chapter">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Chapter Name</label>
@@ -245,7 +302,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             New chapter credentials were generated and sent. Username: <code><?php echo htmlspecialchars($username, ENT_QUOTES); ?></code>
         </div>
     <?php endif; ?>
+
+    <div class="card table-card">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h2 class="h4 mb-0">Chapter Remarks</h2>
+            <p class="mb-0 muted">Use remarks like "Paid" or "Pending" to control winner eligibility.</p>
+        </div>
+
+        <?php if ($chapterRows === []): ?>
+            <div class="alert alert-warning mb-0">No chapter accounts found.</div>
+        <?php else: ?>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                    <tr>
+                        <th>Chapter</th>
+                        <th>Email</th>
+                        <th>Remarks</th>
+                        <th>Activation Progress</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($chapterRows as $row): ?>
+                        <tr>
+                            <td>
+                                <div><?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></div>
+                                <small class="text-muted"><?php echo htmlspecialchars((string) ($row['username'] ?? ''), ENT_QUOTES); ?></small>
+                            </td>
+                            <td><?php echo htmlspecialchars((string) ($row['email'] ?? ''), ENT_QUOTES); ?></td>
+                            <td><?php echo htmlspecialchars((string) ($row['remarks'] ?? ''), ENT_QUOTES); ?></td>
+                            <td><?php echo (int) ($row['activated_tickets'] ?? 0); ?> / <?php echo (int) ($row['allocated_tickets'] ?? 0); ?></td>
+                            <td>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#chapterRemarksModal<?php echo (int) ($row['id'] ?? 0); ?>">
+                                    Edit Remarks
+                                </button>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <?php foreach ($chapterRows as $row): ?>
+        <div class="modal fade" id="chapterRemarksModal<?php echo (int) ($row['id'] ?? 0); ?>" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit Remarks: <?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="update_remarks">
+                            <input type="hidden" name="chapter_id" value="<?php echo (int) ($row['id'] ?? 0); ?>">
+
+                            <label class="form-label">Remarks</label>
+                            <textarea name="remarks" class="form-control" rows="4" maxlength="255" placeholder="Example: Paid, Pending, Fully Paid"><?php echo htmlspecialchars((string) ($row['remarks'] ?? ''), ENT_QUOTES); ?></textarea>
+                            <div class="form-text">Ticket is eligible in winner picker when remarks contains "paid".</div>
+
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="submit" class="btn btn-primary">Save Remarks</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
 </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

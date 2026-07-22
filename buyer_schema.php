@@ -54,6 +54,7 @@ function ensureBuyerSchema(mysqli $conn): void
         "activation_token_last_used_at DATETIME NULL",
         "activation_portal_sent_at DATETIME NULL",
         "activation_completed_at DATETIME NULL",
+        "remarks VARCHAR(255) NULL",
     ];
     foreach ($buyerColumns as $columnDefinition) {
         buyer_add_column_if_missing($conn, 'buyers', $columnDefinition);
@@ -72,6 +73,7 @@ function ensureBuyerSchema(mysqli $conn): void
             "role VARCHAR(20) NOT NULL DEFAULT 'admin'",
             "email VARCHAR(150) NULL",
             "chapter_name VARCHAR(120) NULL",
+            "remarks VARCHAR(255) NULL",
         ];
         foreach ($userColumns as $columnDefinition) {
             buyer_add_column_if_missing($conn, 'users', $columnDefinition);

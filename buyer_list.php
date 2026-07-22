@@ -225,6 +225,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'update_buyer' && !$canManageBuyers) {
             throw new RuntimeException('You do not have permission to update buyer records.');
         }
+        if ($action === 'update_remarks' && !$canManageBuyers) {
+            throw new RuntimeException('You do not have permission to update buyer remarks.');
+        }
         if ($action === 'send_email' && !$canResendEmail) {
             throw new RuntimeException('You do not have permission to resend buyer emails.');
         }
@@ -266,6 +269,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $updateBuyer->close();
 
             $flashMessage = 'Buyer details updated successfully.';
+            $flashType = 'success';
+        } elseif ($action === 'update_remarks') {
+            $buyerId = (int) ($_POST['buyer_id'] ?? 0);
+            $remarks = trim((string) ($_POST['remarks'] ?? ''));
+
+            if ($buyerId <= 0) {
+                throw new RuntimeException('Invalid buyer selected.');
+            }
+
+            $remarksValue = $remarks !== '' ? $remarks : null;
+            $updateRemarks = $conn->prepare('UPDATE buyers SET remarks = ?, updated_at = NOW() WHERE id = ?');
+            if (!$updateRemarks) {
+                throw new RuntimeException('Unable to update buyer remarks.');
+            }
+
+            $updateRemarks->bind_param('si', $remarksValue, $buyerId);
+            $updateRemarks->execute();
+            $updateRemarks->close();
+
+            $flashMessage = 'Buyer remarks updated successfully.';
             $flashType = 'success';
         } elseif ($action === 'send_email') {
             $buyerId = (int) ($_POST['buyer_id'] ?? 0);
@@ -359,7 +382,7 @@ if ($currentPage > $totalPages) {
 }
 $offset = ($currentPage - 1) * $perPage;
 
-$listSql = "SELECT b.id, b.buyer_type, b.full_name, b.email, b.contact, b.chapter, b.status, b.email_sent_at,
+$listSql = "SELECT b.id, b.buyer_type, b.full_name, b.email, b.contact, b.chapter, b.status, b.remarks, b.email_sent_at,
         SUM(CASE WHEN LOWER(COALESCE(t.status, 'pending')) = 'activated' THEN 1 ELSE 0 END) AS activated_tickets,
         COUNT(ta.id) AS total_tickets,
         MIN(ta.ticket_number) AS first_ticket,
@@ -738,6 +761,7 @@ if ($totalPages <= 7) {
                     <th>Email</th>
                     <th>Contact</th>
                     <th>Chapter</th>
+                    <th>Remarks</th>
                     <th>Status</th>
                     <th>Activation Progress</th>
                     <th>Actions</th>
@@ -746,7 +770,7 @@ if ($totalPages <= 7) {
                 <tbody>
                 <?php if (empty($buyers)): ?>
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">No buyers found.</td>
+                        <td colspan="8" class="text-center text-muted py-4">No buyers found.</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($buyers as $buyer): ?>
@@ -757,6 +781,7 @@ if ($totalPages <= 7) {
                             <td><?php echo htmlspecialchars($buyer['email'], ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars($buyer['contact'], ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars($buyer['chapter'], ENT_QUOTES); ?></td>
+                            <td><?php echo htmlspecialchars((string) ($buyer['remarks'] ?? ''), ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars(buyerStatusLabel($buyer['status']), ENT_QUOTES); ?></td>
                             <td><?php echo $activatedTickets; ?> / <?php echo $totalTickets; ?></td>
                             <td>
@@ -768,6 +793,15 @@ if ($totalPages <= 7) {
                                         data-bs-target="#buyerModal<?php echo (int) $buyer['id']; ?>">
                                         View Details
                                     </button>
+                                    <?php if ($canManageBuyers): ?>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-secondary"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#buyerRemarksModal<?php echo (int) $buyer['id']; ?>">
+                                            Edit Remarks
+                                        </button>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
@@ -820,6 +854,31 @@ if ($totalPages <= 7) {
             $fieldReadonlyAttr = $canManageBuyers ? '' : 'readonly';
             $fieldDisabledAttr = $canManageBuyers ? '' : 'disabled';
             ?>
+            <div class="modal fade" id="buyerRemarksModal<?php echo (int) $buyer['id']; ?>" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Edit Remarks: <?php echo htmlspecialchars($buyer['full_name'], ENT_QUOTES); ?></h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form method="POST">
+                                <input type="hidden" name="action" value="update_remarks">
+                                <input type="hidden" name="buyer_id" value="<?php echo (int) $buyer['id']; ?>">
+
+                                <label class="form-label">Remarks</label>
+                                <textarea name="remarks" class="form-control" rows="4" maxlength="255" placeholder="Example: Paid, Pending balance, Fully Paid"><?php echo htmlspecialchars((string) ($buyer['remarks'] ?? ''), ENT_QUOTES); ?></textarea>
+                                <div class="form-text">Ticket is eligible in winner picker when remarks contains "paid".</div>
+
+                                <div class="d-flex justify-content-end mt-3">
+                                    <button type="submit" class="btn btn-primary">Save Remarks</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="modal fade" id="buyerModal<?php echo (int) $buyer['id']; ?>" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg modal-dialog-centered">
                     <div class="modal-content">
