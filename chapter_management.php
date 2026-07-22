@@ -152,6 +152,14 @@ if ($chapterListResult instanceof mysqli_result) {
     }
     $chapterListResult->close();
 }
+
+$totalChapters = count($chapterRows);
+$totalAllocatedTickets = 0;
+$totalActivatedTickets = 0;
+foreach ($chapterRows as $chapterSummaryRow) {
+    $totalAllocatedTickets += (int) ($chapterSummaryRow['allocated_tickets'] ?? 0);
+    $totalActivatedTickets += (int) ($chapterSummaryRow['activated_tickets'] ?? 0);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -209,10 +217,10 @@ if ($chapterListResult instanceof mysqli_result) {
             border-left: 3px solid #ff6b35;
         }
         .shell {
-            max-width: 920px;
+            max-width: 1380px;
             margin-left: 280px;
             width: calc(100% - 280px);
-            padding: 32px 16px 48px;
+            padding: 28px 24px 48px;
         }
         .hero, .card {
             background: #ffffff;
@@ -220,18 +228,130 @@ if ($chapterListResult instanceof mysqli_result) {
             border-radius: 18px;
             box-shadow: 0 18px 60px rgba(40, 53, 85, 0.12);
         }
+        .hero {
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .hero h1 {
+            margin: 0 0 10px;
+            color: #283555;
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+        .hero-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(180px, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .hero-stat {
+            border: 1px solid #e8eef5;
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+        }
+        .hero-stat .label {
+            display: block;
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            margin-bottom: 2px;
+        }
+        .hero-stat .value {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #283555;
+            line-height: 1;
+        }
+        .layout-grid {
+            display: grid;
+            grid-template-columns: minmax(380px, 1.05fr) minmax(340px, 0.95fr);
+            gap: 18px;
+            align-items: start;
+        }
+        .create-card {
+            padding: 24px;
+        }
+        .help-card {
+            padding: 24px;
+            background: linear-gradient(145deg, #283555 0%, #3f5689 100%);
+            color: #f8fafc;
+            border: none;
+        }
+        .help-card h2 {
+            font-size: 1.05rem;
+            margin: 0 0 10px;
+            font-weight: 700;
+        }
+        .help-card p {
+            color: #d9e3f4;
+            margin-bottom: 12px;
+        }
+        .help-list {
+            margin: 0;
+            padding-left: 18px;
+        }
+        .help-list li {
+            margin-bottom: 6px;
+            color: #e6edf9;
+        }
         .table-card {
             margin-top: 20px;
-            padding: 20px;
+            padding: 22px;
+        }
+        .chapter-table {
+            min-width: 1040px;
         }
         .table thead th {
             background: linear-gradient(135deg, #283555 0%, #3a4a6f 100%);
             color: #ffffff;
             border: none;
             white-space: nowrap;
+            padding: 13px 12px;
+            font-size: 0.87rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
-        .hero { padding: 28px; margin-bottom: 20px; }
-        .hero h1 { margin: 0 0 10px; color: #283555; font-size: 1.9rem; font-weight: 700; }
+        .chapter-table td {
+            padding: 13px 12px;
+            vertical-align: middle;
+        }
+        .chapter-name {
+            font-weight: 700;
+            color: #243652;
+        }
+        .remarks-pill {
+            display: inline-flex;
+            padding: 0.25rem 0.62rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .remarks-pill.paid,
+        .remarks-pill.fully-paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .remarks-pill.partially-paid {
+            background: #fef9c3;
+            color: #854d0e;
+        }
+        .remarks-pill.pending,
+        .remarks-pill.not-paid {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .progress-text {
+            font-weight: 600;
+        }
+        .table-actions {
+            text-align: right;
+            min-width: 120px;
+        }
         .alert { border-radius: 12px; }
         .form-label { font-weight: 600; }
         .btn-primary { background: #283555; border-color: #283555; }
@@ -253,6 +373,15 @@ if ($chapterListResult instanceof mysqli_result) {
                 max-width: 100%;
                 padding: 16px;
             }
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .layout-grid {
+                grid-template-columns: 1fr;
+            }
+            .table-card {
+                padding: 14px;
+            }
         }
     </style>
 </head>
@@ -263,42 +392,68 @@ if ($chapterListResult instanceof mysqli_result) {
 <div class="shell">
     <div class="hero">
         <h1>Chapter Management</h1>
-        <p class="mb-0 muted">Create chapter portal accounts and email the President login details.</p>
+        <p class="mb-0 muted">Create chapter portal accounts, manage payment remarks, and monitor chapter activation performance in one place.</p>
+        <div class="hero-grid">
+            <div class="hero-stat">
+                <span class="label">Total Chapters</span>
+                <span class="value"><?php echo (int) $totalChapters; ?></span>
+            </div>
+            <div class="hero-stat">
+                <span class="label">Allocated Tickets</span>
+                <span class="value"><?php echo (int) $totalAllocatedTickets; ?></span>
+            </div>
+            <div class="hero-stat">
+                <span class="label">Activated Tickets</span>
+                <span class="value"><?php echo (int) $totalActivatedTickets; ?></span>
+            </div>
+        </div>
     </div>
 
     <?php if ($flashMessage !== ''): ?>
         <div class="alert alert-<?php echo htmlspecialchars($flashType, ENT_QUOTES); ?>"><?php echo htmlspecialchars($flashMessage, ENT_QUOTES); ?></div>
     <?php endif; ?>
 
-    <div class="card p-4">
-        <form method="POST">
-            <input type="hidden" name="action" value="create_chapter">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">Chapter Name</label>
-                    <input type="text" name="chapter_name" class="form-control" maxlength="120" value="<?php echo htmlspecialchars($chapterName, ENT_QUOTES); ?>" required>
+    <div class="layout-grid">
+        <div class="card create-card">
+            <h2 class="h4 mb-3">Create Chapter Account</h2>
+            <form method="POST">
+                <input type="hidden" name="action" value="create_chapter">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Chapter Name</label>
+                        <input type="text" name="chapter_name" class="form-control" maxlength="120" value="<?php echo htmlspecialchars($chapterName, ENT_QUOTES); ?>" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">President Email</label>
+                        <input type="email" name="president_email" class="form-control" maxlength="150" value="<?php echo htmlspecialchars($presidentEmail, ENT_QUOTES); ?>" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Username</label>
+                        <input type="text" name="username" class="form-control" maxlength="150" value="<?php echo htmlspecialchars($username !== '' ? $username : $presidentEmail, ENT_QUOTES); ?>">
+                        <div class="form-text">Defaults to the president email if left blank.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="text" name="password" class="form-control" maxlength="60" placeholder="Leave blank to auto-generate">
+                        <div class="form-text">A random password will be created if you do not supply one.</div>
+                    </div>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">President Email</label>
-                    <input type="email" name="president_email" class="form-control" maxlength="150" value="<?php echo htmlspecialchars($presidentEmail, ENT_QUOTES); ?>" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Username</label>
-                    <input type="text" name="username" class="form-control" maxlength="150" value="<?php echo htmlspecialchars($username !== '' ? $username : $presidentEmail, ENT_QUOTES); ?>">
-                    <div class="form-text">Defaults to the president email if left blank.</div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Password</label>
-                    <input type="text" name="password" class="form-control" maxlength="60" placeholder="Leave blank to auto-generate">
-                    <div class="form-text">A random password will be created if you do not supply one.</div>
-                </div>
-            </div>
 
-            <div class="mt-4 d-flex gap-2 flex-wrap">
-                <button type="submit" class="btn btn-primary">Create Chapter Account</button>
-                <a href="/CPMraffle/admin_dashboard.php" class="btn btn-outline-secondary">Back to Dashboard</a>
-            </div>
-        </form>
+                <div class="mt-4 d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary">Create Chapter Account</button>
+                    <a href="/CPMraffle/admin_dashboard.php" class="btn btn-outline-secondary">Back to Dashboard</a>
+                </div>
+            </form>
+        </div>
+        <aside class="card help-card">
+            <h2>Remarks Workflow</h2>
+            <p>Keep eligibility clean and auditable by using standard payment remarks.</p>
+            <ul class="help-list">
+                <li>Set remarks to Paid or Fully Paid for eligible tickets.</li>
+                <li>Use Pending or Not Paid to block winner eligibility.</li>
+                <li>Update chapter remarks from the table action button.</li>
+            </ul>
+        </aside>
     </div>
 
     <?php if ($generatedPassword !== ''): ?>
@@ -317,7 +472,7 @@ if ($chapterListResult instanceof mysqli_result) {
             <div class="alert alert-warning mb-0">No chapter accounts found.</div>
         <?php else: ?>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 chapter-table">
                     <thead>
                     <tr>
                         <th>Chapter</th>
@@ -329,15 +484,23 @@ if ($chapterListResult instanceof mysqli_result) {
                     </thead>
                     <tbody>
                     <?php foreach ($chapterRows as $row): ?>
+                        <?php
+                        $remarksValue = trim((string) ($row['remarks'] ?? ''));
+                        $remarksClass = strtolower(str_replace(' ', '-', $remarksValue !== '' ? $remarksValue : 'pending'));
+                        ?>
                         <tr>
                             <td>
-                                <div><?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></div>
+                                <div class="chapter-name"><?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></div>
                                 <small class="text-muted"><?php echo htmlspecialchars((string) ($row['username'] ?? ''), ENT_QUOTES); ?></small>
                             </td>
                             <td><?php echo htmlspecialchars((string) ($row['email'] ?? ''), ENT_QUOTES); ?></td>
-                            <td><?php echo htmlspecialchars((string) ($row['remarks'] ?? ''), ENT_QUOTES); ?></td>
-                            <td><?php echo (int) ($row['activated_tickets'] ?? 0); ?> / <?php echo (int) ($row['allocated_tickets'] ?? 0); ?></td>
                             <td>
+                                <span class="remarks-pill <?php echo htmlspecialchars($remarksClass, ENT_QUOTES); ?>">
+                                    <?php echo htmlspecialchars($remarksValue !== '' ? $remarksValue : 'Pending', ENT_QUOTES); ?>
+                                </span>
+                            </td>
+                            <td class="progress-text"><?php echo (int) ($row['activated_tickets'] ?? 0); ?> / <?php echo (int) ($row['allocated_tickets'] ?? 0); ?></td>
+                            <td class="table-actions">
                                 <button
                                     type="button"
                                     class="btn btn-sm btn-outline-secondary"

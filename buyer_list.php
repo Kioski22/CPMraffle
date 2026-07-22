@@ -610,6 +610,29 @@ if ($totalPages <= 7) {
             font-weight: 600;
             font-size: 0.85rem;
         }
+        .remarks-pill {
+            display: inline-flex;
+            padding: 0.25rem 0.62rem;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .remarks-pill.paid,
+        .remarks-pill.fully-paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .remarks-pill.partially-paid {
+            background: #fef9c3;
+            color: #854d0e;
+        }
+        .remarks-pill.pending,
+        .remarks-pill.not-paid {
+            background: #fee2e2;
+            color: #991b1b;
+        }
 
         .dashboard-container {
             display: flex;
@@ -780,12 +803,20 @@ if ($totalPages <= 7) {
                     <?php foreach ($buyers as $buyer): ?>
                         <?php $activatedTickets = (int) ($buyer['activated_tickets'] ?? 0); ?>
                         <?php $totalTickets = (int) ($buyer['total_tickets'] ?? 0); ?>
+                        <?php
+                        $buyerRemarksValue = trim((string) ($buyer['remarks'] ?? ''));
+                        $buyerRemarksClass = strtolower(str_replace(' ', '-', $buyerRemarksValue !== '' ? $buyerRemarksValue : 'pending'));
+                        ?>
                         <tr>
                             <td><?php echo htmlspecialchars($buyer['full_name'], ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars($buyer['email'], ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars($buyer['contact'], ENT_QUOTES); ?></td>
                             <td><?php echo htmlspecialchars($buyer['chapter'], ENT_QUOTES); ?></td>
-                            <td><?php echo htmlspecialchars((string) ($buyer['remarks'] ?? ''), ENT_QUOTES); ?></td>
+                            <td>
+                                <span class="remarks-pill <?php echo htmlspecialchars($buyerRemarksClass, ENT_QUOTES); ?>">
+                                    <?php echo htmlspecialchars($buyerRemarksValue !== '' ? $buyerRemarksValue : 'Pending', ENT_QUOTES); ?>
+                                </span>
+                            </td>
                             <td><?php echo htmlspecialchars(buyerStatusLabel($buyer['status']), ENT_QUOTES); ?></td>
                             <td><?php echo $activatedTickets; ?> / <?php echo $totalTickets; ?></td>
                             <td>
