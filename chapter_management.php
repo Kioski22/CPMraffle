@@ -40,7 +40,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? 'create_chapter'));
 
     try {
-        if ($action === 'update_remarks') {
+        if ($action === 'update_chapter_email') {
+            $chapterId = (int) ($_POST['chapter_id'] ?? 0);
+            $newEmail   = trim((string) ($_POST['president_email'] ?? ''));
+            if ($chapterId <= 0) {
+                throw new RuntimeException('Invalid chapter selected.');
+            }
+            if ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException('A valid email address is required.');
+            }
+            $emailStmt = $conn->prepare("UPDATE users SET email = ?, updated_at = NOW() WHERE id = ? AND LOWER(role) = 'chapter'");
+            if (!$emailStmt) {
+                throw new RuntimeException('Unable to update chapter email.');
+            }
+            $emailStmt->bind_param('si', $newEmail, $chapterId);
+            $emailStmt->execute();
+            $emailStmt->close();
+            $flashMessage = 'Chapter email updated successfully.';
+            $flashType    = 'success';
+        } elseif ($action === 'resend_chapter_invitation') {
+            $chapterId = (int) ($_POST['chapter_id'] ?? 0);
+            if ($chapterId <= 0) {
+                throw new RuntimeException('Invalid chapter selected.');
+            }
+            $fetchStmt = $conn->prepare("SELECT COALESCE(chapter_name, name, username) AS chapter_name, username, email FROM users WHERE id = ? AND LOWER(role) = 'chapter' LIMIT 1");
+            if (!$fetchStmt) {
+                throw new RuntimeException('Unable to fetch chapter details.');
+            }
+            $fetchStmt->bind_param('i', $chapterId);
+            $fetchStmt->execute();
+            $fetchResult = $fetchStmt->get_result();
+            $fetchStmt->close();
+            if (!$fetchResult || $fetchResult->num_rows === 0) {
+                throw new RuntimeException('Chapter account not found.');
+            }
+            $chapterData = $fetchResult->fetch_assoc();
+            $fetchResult->free();
+            if ($chapterData['email'] === '' || !filter_var($chapterData['email'], FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException('This chapter has no valid email address. Please edit the email first.');
+            }
+            $newPassword   = chapter_generate_password();
+            $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+            $updateStmt = $conn->prepare("UPDATE users SET password = ?, updated_at = NOW() WHERE id = ? AND LOWER(role) = 'chapter'");
+            if (!$updateStmt) {
+                throw new RuntimeException('Unable to update chapter credentials.');
+            }
+            $updateStmt->bind_param('si', $hashedPassword, $chapterId);
+            $updateStmt->execute();
+            $updateStmt->close();
+            ticket_send_chapter_invitation($appConfig, [
+                'chapter_name'         => $chapterData['chapter_name'],
+                'president_email'      => $chapterData['email'],
+                'username'             => $chapterData['username'],
+                'password'             => $newPassword,
+                'ticket_range_summary' => 'See chapter portal for current allocation',
+                'ticket_count'         => '0',
+            ]);
+            $flashMessage = 'Invitation resent successfully to ' . $chapterData['email'] . '.';
+            $flashType    = 'success';
+        } elseif ($action === 'update_remarks') {
             $chapterId = (int) ($_POST['chapter_id'] ?? 0);
             $remarks = trim((string) ($_POST['remarks'] ?? ''));
             if ($chapterId <= 0) {
@@ -501,13 +559,28 @@ foreach ($chapterRows as $chapterSummaryRow) {
                             </td>
                             <td class="progress-text"><?php echo (int) ($row['activated_tickets'] ?? 0); ?> / <?php echo (int) ($row['allocated_tickets'] ?? 0); ?></td>
                             <td class="table-actions">
-                                <button
-                                    type="button"
-                                    class="btn btn-sm btn-outline-secondary"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#chapterRemarksModal<?php echo (int) ($row['id'] ?? 0); ?>">
-                                    Edit Remarks
-                                </button>
+                                <div class="d-flex gap-1 flex-wrap justify-content-end">
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#chapterRemarksModal<?php echo (int) ($row['id'] ?? 0); ?>">
+                                        Edit Remarks
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-info"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#chapterEmailModal<?php echo (int) ($row['id'] ?? 0); ?>">
+                                        Edit Email
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-warning"
+                                        onclick="resendChapterInvite(<?php echo (int) ($row['id'] ?? 0); ?>, '<?php echo htmlspecialchars(addslashes((string) ($row['chapter_name'] ?? '')), ENT_QUOTES); ?>', '<?php echo htmlspecialchars(addslashes((string) ($row['email'] ?? '')), ENT_QUOTES); ?>')">
+                                        Resend Invite
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -549,9 +622,59 @@ foreach ($chapterRows as $chapterSummaryRow) {
                 </div>
             </div>
         </div>
+
+        <!-- Edit Email Modal -->
+        <div class="modal fade" id="chapterEmailModal<?php echo (int) ($row['id'] ?? 0); ?>" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit Email: <?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="update_chapter_email">
+                            <input type="hidden" name="chapter_id" value="<?php echo (int) ($row['id'] ?? 0); ?>">
+
+                            <label class="form-label">President Email</label>
+                            <input
+                                type="email"
+                                name="president_email"
+                                class="form-control"
+                                maxlength="150"
+                                value="<?php echo htmlspecialchars((string) ($row['email'] ?? ''), ENT_QUOTES); ?>"
+                                required>
+                            <div class="form-text">Updating the email does not automatically resend the invitation. Use the "Resend Invite" button after saving.</div>
+
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="submit" class="btn btn-primary">Save Email</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
     <?php endforeach; ?>
 </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<form id="resendInviteForm" method="POST" style="display:none">
+    <input type="hidden" name="action" value="resend_chapter_invitation">
+    <input type="hidden" name="chapter_id" id="resendChapterId">
+</form>
+<script>
+function resendChapterInvite(chapterId, chapterName, currentEmail) {
+    var msg = 'Resend invitation to "' + chapterName + '"';
+    if (currentEmail) {
+        msg += ' (' + currentEmail + ')';
+    }
+    msg += '?\n\nA new temporary password will be generated and emailed to the chapter president.';
+    if (!confirm(msg)) {
+        return;
+    }
+    document.getElementById('resendChapterId').value = chapterId;
+    document.getElementById('resendInviteForm').submit();
+}
+</script>
 </body>
 </html>
