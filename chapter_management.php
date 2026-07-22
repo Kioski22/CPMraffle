@@ -98,6 +98,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $flashMessage = 'Invitation resent successfully to ' . $chapterData['email'] . '.';
             $flashType    = 'success';
+        } elseif ($action === 'update_chapter_credentials') {
+            $chapterId   = (int) ($_POST['chapter_id'] ?? 0);
+            $newUsername = trim((string) ($_POST['new_username'] ?? ''));
+            $newPassword = trim((string) ($_POST['new_password'] ?? ''));
+            if ($chapterId <= 0) {
+                throw new RuntimeException('Invalid chapter selected.');
+            }
+            if ($newUsername === '') {
+                throw new RuntimeException('Username cannot be empty.');
+            }
+            /* Ensure username is not taken by another account */
+            $dupStmt = $conn->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ? LIMIT 1');
+            if (!$dupStmt) {
+                throw new RuntimeException('Unable to validate username.');
+            }
+            $dupStmt->bind_param('si', $newUsername, $chapterId);
+            $dupStmt->execute();
+            $dupResult = $dupStmt->get_result();
+            $dupStmt->close();
+            if ($dupResult && $dupResult->num_rows > 0) {
+                throw new RuntimeException('That username is already taken by another account.');
+            }
+            if ($newPassword !== '') {
+                /* Update both username and password */
+                $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+                $credStmt = $conn->prepare("UPDATE users SET username = ?, password = ?, updated_at = NOW() WHERE id = ? AND LOWER(role) = 'chapter'");
+                if (!$credStmt) {
+                    throw new RuntimeException('Unable to update chapter credentials.');
+                }
+                $credStmt->bind_param('ssi', $newUsername, $hashedPassword, $chapterId);
+            } else {
+                /* Update username only */
+                $credStmt = $conn->prepare("UPDATE users SET username = ?, updated_at = NOW() WHERE id = ? AND LOWER(role) = 'chapter'");
+                if (!$credStmt) {
+                    throw new RuntimeException('Unable to update chapter username.');
+                }
+                $credStmt->bind_param('si', $newUsername, $chapterId);
+            }
+            $credStmt->execute();
+            $credStmt->close();
+            $flashMessage = 'Chapter credentials updated successfully.' . ($newPassword !== '' ? ' New password has been set.' : '');
+            $flashType    = 'success';
         } elseif ($action === 'update_remarks') {
             $chapterId = (int) ($_POST['chapter_id'] ?? 0);
             $remarks = trim((string) ($_POST['remarks'] ?? ''));
@@ -576,6 +618,13 @@ foreach ($chapterRows as $chapterSummaryRow) {
                                     </button>
                                     <button
                                         type="button"
+                                        class="btn btn-sm btn-outline-dark"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#chapterCredModal<?php echo (int) ($row['id'] ?? 0); ?>">
+                                        Edit Credentials
+                                    </button>
+                                    <button
+                                        type="button"
                                         class="btn btn-sm btn-outline-warning"
                                         onclick="resendChapterInvite(<?php echo (int) ($row['id'] ?? 0); ?>, '<?php echo htmlspecialchars(addslashes((string) ($row['chapter_name'] ?? '')), ENT_QUOTES); ?>', '<?php echo htmlspecialchars(addslashes((string) ($row['email'] ?? '')), ENT_QUOTES); ?>')">
                                         Resend Invite
@@ -623,6 +672,60 @@ foreach ($chapterRows as $chapterSummaryRow) {
             </div>
         </div>
 
+        <!-- Edit Credentials Modal -->
+        <div class="modal fade" id="chapterCredModal<?php echo (int) ($row['id'] ?? 0); ?>" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit Credentials: <?php echo htmlspecialchars((string) ($row['chapter_name'] ?? ''), ENT_QUOTES); ?></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="update_chapter_credentials">
+                            <input type="hidden" name="chapter_id" value="<?php echo (int) ($row['id'] ?? 0); ?>">
+
+                            <div class="mb-3">
+                                <label class="form-label">Username</label>
+                                <input
+                                    type="text"
+                                    name="new_username"
+                                    class="form-control"
+                                    maxlength="150"
+                                    value="<?php echo htmlspecialchars((string) ($row['username'] ?? ''), ENT_QUOTES); ?>"
+                                    required
+                                    autocomplete="off">
+                            </div>
+                            <div class="mb-1">
+                                <label class="form-label">New Password</label>
+                                <div class="input-group">
+                                    <input
+                                        type="text"
+                                        name="new_password"
+                                        id="credPw<?php echo (int) ($row['id'] ?? 0); ?>"
+                                        class="form-control"
+                                        maxlength="72"
+                                        placeholder="Leave blank to keep current password"
+                                        autocomplete="new-password">
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary"
+                                        onclick="generateCredPw('credPw<?php echo (int) ($row['id'] ?? 0); ?>')">
+                                        Generate
+                                    </button>
+                                </div>
+                                <div class="form-text">Leave blank to keep the existing password unchanged.</div>
+                            </div>
+
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="submit" class="btn btn-primary">Save Credentials</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Edit Email Modal -->
         <div class="modal fade" id="chapterEmailModal<?php echo (int) ($row['id'] ?? 0); ?>" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
@@ -663,6 +766,14 @@ foreach ($chapterRows as $chapterSummaryRow) {
     <input type="hidden" name="chapter_id" id="resendChapterId">
 </form>
 <script>
+function generateCredPw(inputId) {
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    var pw = '';
+    var arr = new Uint8Array(12);
+    window.crypto.getRandomValues(arr);
+    arr.forEach(function(b) { pw += chars[b % chars.length]; });
+    document.getElementById(inputId).value = pw;
+}
 function resendChapterInvite(chapterId, chapterName, currentEmail) {
     var msg = 'Resend invitation to "' + chapterName + '"';
     if (currentEmail) {

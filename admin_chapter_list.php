@@ -352,27 +352,51 @@ function admin_chapter_next_dir(string $currentSort, string $currentDir, string 
             </div>
 
             <?php if ($totalPages > 1): ?>
-                <nav aria-label="Chapter list pagination">
-                    <ul class="pagination mb-0 mt-2">
+                <nav aria-label="Chapter list pagination" class="mt-3">
+                    <ul class="pagination pagination-sm flex-wrap mb-0 gap-1">
                         <?php
-                        $prevPage = max(1, $page - 1);
-                        $nextPage = min($totalPages, $page + 1);
+                        $prevPage  = max(1, $page - 1);
+                        $nextPage  = min($totalPages, $page + 1);
                         $prevQuery = $baseQuery; $prevQuery['page'] = $prevPage;
                         $nextQuery = $baseQuery; $nextQuery['page'] = $nextPage;
+                        $firstQuery = $baseQuery; $firstQuery['page'] = 1;
+                        $lastQuery  = $baseQuery; $lastQuery['page'] = $totalPages;
+
+                        /* Build the set of page numbers to show with ellipsis gaps */
+                        $window  = 2; // pages on each side of current
+                        $visible = [];
+                        for ($p = 1; $p <= $totalPages; $p++) {
+                            if ($p === 1 || $p === $totalPages
+                                || ($p >= $page - $window && $p <= $page + $window)) {
+                                $visible[] = $p;
+                            }
+                        }
+                        $visible = array_unique($visible);
+                        sort($visible);
                         ?>
                         <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                            <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($prevQuery), ENT_QUOTES); ?>">Previous</a>
+                            <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($firstQuery), ENT_QUOTES); ?>" title="First">&laquo;</a>
                         </li>
-                        <?php for ($p = 1; $p <= $totalPages; $p++): ?>
-                            <?php $pageQuery = $baseQuery; $pageQuery['page'] = $p; ?>
+                        <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+                            <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($prevQuery), ENT_QUOTES); ?>">Prev</a>
+                        </li>
+                        <?php $prev = null; foreach ($visible as $p):
+                            if ($prev !== null && $p - $prev > 1): ?>
+                                <li class="page-item disabled"><span class="page-link">…</span></li>
+                            <?php endif;
+                            $pageQuery = $baseQuery; $pageQuery['page'] = $p; ?>
                             <li class="page-item <?php echo $p === $page ? 'active' : ''; ?>">
-                                <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($pageQuery), ENT_QUOTES); ?>"><?php echo htmlspecialchars((string) $p, ENT_QUOTES); ?></a>
+                                <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($pageQuery), ENT_QUOTES); ?>"><?php echo $p; ?></a>
                             </li>
-                        <?php endfor; ?>
+                        <?php $prev = $p; endforeach; ?>
                         <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
                             <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($nextQuery), ENT_QUOTES); ?>">Next</a>
                         </li>
+                        <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
+                            <a class="page-link" href="?<?php echo htmlspecialchars(http_build_query($lastQuery), ENT_QUOTES); ?>" title="Last">&raquo;</a>
+                        </li>
                     </ul>
+                    <div class="text-muted small mt-1">Page <?php echo $page; ?> of <?php echo $totalPages; ?> &mdash; <?php echo number_format($totalRows); ?> records</div>
                 </nav>
             <?php endif; ?>
         <?php endif; ?>
