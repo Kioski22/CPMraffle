@@ -6,16 +6,25 @@ include __DIR__ . '/db.php';
 
 function migration_run_alter(mysqli $conn, string $sql): array
 {
-    if ($conn->query($sql)) {
-        return ['status' => 'added', 'message' => 'Column added successfully.'];
-    }
+    try {
+        if ($conn->query($sql)) {
+            return ['status' => 'added', 'message' => 'Column added successfully.'];
+        }
 
-    $error = strtolower((string) $conn->error);
-    if (strpos($error, 'duplicate column') !== false) {
-        return ['status' => 'exists', 'message' => 'Column already exists.'];
-    }
+        $error = strtolower((string) $conn->error);
+        if (strpos($error, 'duplicate column') !== false) {
+            return ['status' => 'exists', 'message' => 'Column already exists.'];
+        }
 
-    return ['status' => 'failed', 'message' => $conn->error !== '' ? $conn->error : 'Unknown database error.'];
+        return ['status' => 'failed', 'message' => $conn->error !== '' ? $conn->error : 'Unknown database error.'];
+    } catch (mysqli_sql_exception $exception) {
+        $message = strtolower($exception->getMessage());
+        if ((int) $exception->getCode() === 1060 || strpos($message, 'duplicate column') !== false) {
+            return ['status' => 'exists', 'message' => 'Column already exists.'];
+        }
+
+        return ['status' => 'failed', 'message' => $exception->getMessage()];
+    }
 }
 
 $results = [];
