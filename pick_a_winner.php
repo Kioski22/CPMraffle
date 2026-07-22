@@ -7,6 +7,12 @@ require_once __DIR__ . '/buyer_schema.php';
 
 ensureBuyerSchema($conn);
 
+function pick_winner_is_paid(string $remarks): bool
+{
+    $normalized = strtolower(trim($remarks));
+    return in_array($normalized, ['paid', 'fully paid'], true);
+}
+
 $isAdmin = auth_is_admin();
 $dashboardPath = '/CPMraffle/' . auth_dashboard_path_for_role(auth_role());
 
@@ -113,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $remarks = trim((string) ($ticketRow['chapter_remarks'] ?? ''));
                         }
 
-                        $isPaid = $remarks !== '' && stripos($remarks, 'paid') !== false;
+                        $isPaid = pick_winner_is_paid($remarks);
 
                         $winnerData = [
                             'ticket_number' => (string) ($ticketRow['ticket_number'] ?? $searchedTicket),
@@ -138,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif (!$isPaid) {
                             $resultState = 'error';
                             $resultTitle = 'Not Eligible';
-                            $resultMessage = 'Owner remarks do not contain "paid". Ticket is excluded from the winner draw.';
+                            $resultMessage = 'Owner remarks must be set to Paid or Fully Paid. Ticket is excluded from the winner draw.';
                         } else {
                             $resultState = 'winner';
                             $resultTitle = 'Eligible Winner Found';

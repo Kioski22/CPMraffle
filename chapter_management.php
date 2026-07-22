@@ -22,6 +22,7 @@ $chapterName = '';
 $presidentEmail = '';
 $username = '';
 $chapterRows = [];
+$allowedRemarks = ['', 'Paid', 'Fully Paid', 'Partially Paid', 'Pending', 'Not Paid'];
 
 function chapter_generate_password(int $length = 12): string
 {
@@ -44,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $remarks = trim((string) ($_POST['remarks'] ?? ''));
             if ($chapterId <= 0) {
                 throw new RuntimeException('Invalid chapter selected.');
+            }
+            if (!in_array($remarks, $allowedRemarks, true)) {
+                throw new RuntimeException('Invalid remarks value selected.');
             }
 
             $remarksValue = $remarks !== '' ? $remarks : null;
@@ -364,8 +368,15 @@ if ($chapterListResult instanceof mysqli_result) {
                             <input type="hidden" name="chapter_id" value="<?php echo (int) ($row['id'] ?? 0); ?>">
 
                             <label class="form-label">Remarks</label>
-                            <textarea name="remarks" class="form-control" rows="4" maxlength="255" placeholder="Example: Paid, Pending, Fully Paid"><?php echo htmlspecialchars((string) ($row['remarks'] ?? ''), ENT_QUOTES); ?></textarea>
-                            <div class="form-text">Ticket is eligible in winner picker when remarks contains "paid".</div>
+                            <?php $currentChapterRemarks = trim((string) ($row['remarks'] ?? '')); ?>
+                            <select name="remarks" class="form-select" required>
+                                <?php foreach ($allowedRemarks as $remarksOption): ?>
+                                    <option value="<?php echo htmlspecialchars($remarksOption, ENT_QUOTES); ?>" <?php echo $currentChapterRemarks === $remarksOption ? 'selected' : ''; ?>>
+                                        <?php echo $remarksOption === '' ? 'Select Remarks' : htmlspecialchars($remarksOption, ENT_QUOTES); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">Use a fixed option to avoid typographical errors.</div>
 
                             <div class="d-flex justify-content-end mt-3">
                                 <button type="submit" class="btn btn-primary">Save Remarks</button>

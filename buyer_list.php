@@ -217,6 +217,7 @@ ensureBuyerSchema($conn);
 
 $flashMessage = '';
 $flashType = 'success';
+$allowedRemarks = ['', 'Paid', 'Fully Paid', 'Partially Paid', 'Pending', 'Not Paid'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim((string) ($_POST['action'] ?? ''));
@@ -276,6 +277,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($buyerId <= 0) {
                 throw new RuntimeException('Invalid buyer selected.');
+            }
+            if (!in_array($remarks, $allowedRemarks, true)) {
+                throw new RuntimeException('Invalid remarks value selected.');
             }
 
             $remarksValue = $remarks !== '' ? $remarks : null;
@@ -867,8 +871,15 @@ if ($totalPages <= 7) {
                                 <input type="hidden" name="buyer_id" value="<?php echo (int) $buyer['id']; ?>">
 
                                 <label class="form-label">Remarks</label>
-                                <textarea name="remarks" class="form-control" rows="4" maxlength="255" placeholder="Example: Paid, Pending balance, Fully Paid"><?php echo htmlspecialchars((string) ($buyer['remarks'] ?? ''), ENT_QUOTES); ?></textarea>
-                                <div class="form-text">Ticket is eligible in winner picker when remarks contains "paid".</div>
+                                <?php $currentRemarks = trim((string) ($buyer['remarks'] ?? '')); ?>
+                                <select name="remarks" class="form-select" required>
+                                    <?php foreach ($allowedRemarks as $remarksOption): ?>
+                                        <option value="<?php echo htmlspecialchars($remarksOption, ENT_QUOTES); ?>" <?php echo $currentRemarks === $remarksOption ? 'selected' : ''; ?>>
+                                            <?php echo $remarksOption === '' ? 'Select Remarks' : htmlspecialchars($remarksOption, ENT_QUOTES); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Use a fixed option to avoid typographical errors.</div>
 
                                 <div class="d-flex justify-content-end mt-3">
                                     <button type="submit" class="btn btn-primary">Save Remarks</button>
