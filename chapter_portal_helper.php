@@ -123,6 +123,9 @@ if (!function_exists('chapter_portal_available_tickets')) {
 }
 
 if (!function_exists('chapter_portal_render_sidebar')) {
+    /**
+     * @deprecated Use render_dashboard_sidebar() from dashboard_sidebar_helper.php instead.
+     */
     function chapter_portal_render_sidebar(string $activePath): void
     {
         $items = [
@@ -175,6 +178,7 @@ if (!function_exists('chapter_portal_render_head')) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="/CPMraffle/css/dashboard_sidebar.css" rel="stylesheet">
     <style>
         :root {
             --chapter-navy: #17325c;
@@ -206,7 +210,7 @@ if (!function_exists('chapter_portal_render_head')) {
         .chapter-sidebar a.active { background: #fff7ef; color: var(--chapter-navy); border-color: #ffd2ae; box-shadow: 0 10px 24px rgba(11, 24, 44, 0.15); }
         .chapter-sidebar a.active i { color: var(--chapter-orange); }
 
-        .page-shell, .shell, .chapter-shell { width: min(1240px, calc(100% - 330px)); margin-left: 306px; padding: 36px 22px 56px; }
+        .page-shell, .shell, .chapter-shell { width: min(1240px, calc(100% - 290px)); margin-left: 270px; padding: 36px 22px 56px; }
         .hero, .card, .action-card, .metric-card, .info-strip, .chapter-hero, .chapter-panel, .chapter-metric-card, .chapter-upload-box, .chapter-mobile-record { background: #fff; border: 1px solid var(--chapter-border); border-radius: 24px; box-shadow: var(--chapter-shadow); }
         .hero, .chapter-hero { padding: 32px; margin-bottom: 24px; position: relative; overflow: hidden; }
         .hero h1, .chapter-hero h1 { margin: 0 0 14px; color: var(--chapter-navy); font-size: clamp(2rem, 3vw, 2.8rem); line-height: 1.2; font-weight: 700; }

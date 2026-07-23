@@ -7,6 +7,7 @@ require_once __DIR__ . '/buyer_schema.php';
 require_once __DIR__ . '/email_composer.php';
 require_once __DIR__ . '/buyer_assignment_mailer.php';
 require_once __DIR__ . '/chapter_portal_helper.php';
+require_once __DIR__ . '/dashboard_sidebar_helper.php';
 
 ensureBuyerSchema($conn);
 
@@ -166,7 +167,7 @@ $availableTicketCount = count($availableTickets);
 <?php chapter_portal_render_head('Chapter Buyer Assignment'); ?>
 <body>
 <div class="dashboard-container">
-    <?php chapter_portal_render_sidebar('/CPMraffle/chapter_buyer_assignment.php'); ?>
+    <?php render_dashboard_sidebar('/CPMraffle/chapter_buyer_assignment.php', false); ?>
     <div class="chapter-shell">
         <section class="chapter-hero">
             <div class="chapter-eyebrow"><i class="fas fa-user-plus"></i> Assign Buyer With Ticket Grid</div>

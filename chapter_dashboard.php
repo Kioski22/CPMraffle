@@ -5,6 +5,7 @@ auth_require_roles(['chapter']);
 include __DIR__ . '/db.php';
 require_once __DIR__ . '/buyer_schema.php';
 require_once __DIR__ . '/chapter_portal_helper.php';
+require_once __DIR__ . '/dashboard_sidebar_helper.php';
 
 ensureBuyerSchema($conn);
 
@@ -36,7 +37,7 @@ if ($allocationStmt) {
 <?php chapter_portal_render_head('Chapter Dashboard - Ticket Management System'); ?>
 <body>
 <div class="dashboard-container">
-    <?php chapter_portal_render_sidebar('/CPMraffle/chapter_dashboard.php'); ?>
+    <?php render_dashboard_sidebar('/CPMraffle/chapter_dashboard.php', false); ?>
     <div class="page-shell">
         <div class="hero">
             <div class="badge text-bg-light border mb-3 px-3 py-2">Chapter President Portal</div>

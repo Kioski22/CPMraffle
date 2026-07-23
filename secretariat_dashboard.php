@@ -1,7 +1,10 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/dashboard_sidebar_helper.php';
 auth_require_roles(['secretariat']);
 include 'db.php';
+$isAdmin = auth_is_admin();
+$dashboardPath = '/CPMraffle/secretariat_dashboard.php';
 
 $profile_picture = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png';
 $userId = auth_user_id();
@@ -40,8 +43,16 @@ if ($stmt) {
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="/CPMraffle/css/dashboard_cards.css">
+    <link rel="stylesheet" href="/CPMraffle/css/dashboard_sidebar.css">
+    <style>
+        .dashboard-container { display: flex; min-height: 100vh; }
+        .main-content { margin-left: 280px; flex: 1; min-width: 0; }
+    </style>
 </head>
 <body>
+    <div class="dashboard-container">
+        <?php render_dashboard_sidebar('/CPMraffle/secretariat_dashboard.php', $isAdmin, $dashboardPath); ?>
+        <div class="main-content">
     <div class="topbar">
         <h1>6th PSME CPM National Conference Dashboard</h1>
         <div class="user-meta">
@@ -124,6 +135,7 @@ if ($stmt) {
             <a class="btn secondary" href="/CPMraffle/update.php"><i class="fas fa-user-edit"></i> Update Profile</a>
             <a class="btn" href="/CPMraffle/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
-    </div>
+        </div><!-- /.main-content -->
+    </div><!-- /.dashboard-container -->
 </body>
 </html>

@@ -5,6 +5,7 @@ auth_require_roles(['chapter']);
 include __DIR__ . '/db.php';
 require_once __DIR__ . '/buyer_schema.php';
 require_once __DIR__ . '/chapter_portal_helper.php';
+require_once __DIR__ . '/dashboard_sidebar_helper.php';
 
 ensureBuyerSchema($conn);
 
@@ -131,7 +132,7 @@ $baseQuery = [
 <?php chapter_portal_render_head('Chapter Assigned List'); ?>
 <body>
 <div class="dashboard-container">
-    <?php chapter_portal_render_sidebar('/CPMraffle/chapter_assigned_list.php'); ?>
+    <?php render_dashboard_sidebar('/CPMraffle/chapter_assigned_list.php', false); ?>
     <div class="chapter-shell">
         <section class="chapter-hero">
             <div class="chapter-eyebrow"><i class="fas fa-list-check"></i> Assigned Buyers</div>
