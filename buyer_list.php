@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 auth_require_roles(['admin', 'secretariat', 'cpmadmin']);
 
-$canManageBuyers = auth_is_admin();
+$canManageBuyers = auth_is_admin() || auth_is_cpmadmin();
 $isAdmin = auth_is_admin();
 $canResendEmail = auth_is_admin() || auth_is_secretariat();
 $dashboardPath = '/CPMraffle/' . auth_dashboard_path_for_role(auth_role());
