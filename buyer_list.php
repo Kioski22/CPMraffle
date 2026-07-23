@@ -215,6 +215,16 @@ if (!function_exists('smtp_send_html_mail')) {
 
 ensureBuyerSchema($conn);
 
+function buyer_list_bind_params(mysqli_stmt $stmt, string $types, array &$values): bool
+{
+    $bindValues = [$types];
+    foreach ($values as $index => $_value) {
+        $bindValues[] = &$values[$index];
+    }
+
+    return call_user_func_array([$stmt, 'bind_param'], $bindValues);
+}
+
 $flashMessage = '';
 $flashType = 'success';
 $allowedRemarks = ['', 'Paid', 'Fully Paid', 'Partially Paid', 'Pending', 'Not Paid'];
@@ -352,6 +362,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $search = trim($_GET['search'] ?? '');
+$remarksFilterMap = [
+    'all' => '',
+    'pending' => 'Pending',
+    'not_paid' => 'Not Paid',
+    'partially_paid' => 'Partially Paid',
+    'paid' => 'Paid',
+    'fully_paid' => 'Fully Paid',
+];
+$remarksFilter = strtolower(trim((string) ($_GET['remarks'] ?? 'all')));
+if (!array_key_exists($remarksFilter, $remarksFilterMap)) {
+    $remarksFilter = 'all';
+}
 $currentPage = max(1, (int) ($_GET['page'] ?? 1));
 $allowedPerPage = [10, 25, 50, 100];
 $perPage = (int) ($_GET['per_page'] ?? 25);
@@ -359,19 +381,33 @@ if (!in_array($perPage, $allowedPerPage, true)) {
     $perPage = 25;
 }
 
-$whereSql = '';
-$term = '';
+$whereParts = [];
+$queryTypes = '';
+$queryParams = [];
 if ($search !== '') {
-    $whereSql = ' WHERE b.full_name LIKE ? OR b.email LIKE ? OR b.chapter LIKE ?';
+    $whereParts[] = '(b.full_name LIKE ? OR b.email LIKE ? OR b.chapter LIKE ?)';
     $term = '%' . $search . '%';
+    $queryTypes .= 'sss';
+    $queryParams[] = $term;
+    $queryParams[] = $term;
+    $queryParams[] = $term;
 }
+
+if ($remarksFilter !== 'all') {
+    $whereParts[] = 'LOWER(COALESCE(NULLIF(TRIM(b.remarks), ""), "Pending")) = ?';
+    $queryTypes .= 's';
+    $queryParams[] = strtolower((string) $remarksFilterMap[$remarksFilter]);
+}
+
+$whereSql = $whereParts !== [] ? (' WHERE ' . implode(' AND ', $whereParts)) : '';
 
 $countSql = 'SELECT COUNT(*) AS total FROM buyers b' . $whereSql;
 $countStmt = $conn->prepare($countSql);
 $totalBuyers = 0;
 if ($countStmt) {
-    if ($search !== '') {
-        $countStmt->bind_param('sss', $term, $term, $term);
+    $countValues = $queryParams;
+    if ($queryTypes !== '') {
+        buyer_list_bind_params($countStmt, $queryTypes, $countValues);
     }
     $countStmt->execute();
     $countResult = $countStmt->get_result();
@@ -401,11 +437,10 @@ $listSql = "SELECT b.id, b.buyer_type, b.full_name, b.email, b.contact, b.chapte
 $listStmt = $conn->prepare($listSql);
 $buyers = [];
 if ($listStmt) {
-    if ($search !== '') {
-        $listStmt->bind_param('sssii', $term, $term, $term, $perPage, $offset);
-    } else {
-        $listStmt->bind_param('ii', $perPage, $offset);
-    }
+    $listValues = $queryParams;
+    $listValues[] = $perPage;
+    $listValues[] = $offset;
+    buyer_list_bind_params($listStmt, $queryTypes . 'ii', $listValues);
 
     $listStmt->execute();
     $result = $listStmt->get_result();
@@ -419,6 +454,7 @@ $paginationBaseParams = [];
 if ($search !== '') {
     $paginationBaseParams['search'] = $search;
 }
+$paginationBaseParams['remarks'] = $remarksFilter;
 $paginationBaseParams['per_page'] = $perPage;
 
 $startRecord = $totalBuyers > 0 ? ($offset + 1) : 0;
@@ -756,6 +792,16 @@ if ($totalPages <= 7) {
                 <div class="col-md-4">
                     <input type="text" class="form-control" name="search" value="<?php echo htmlspecialchars($search, ENT_QUOTES); ?>" placeholder="Search name, email, chapter">
                 </div>
+                <div class="col-md-3">
+                    <select name="remarks" class="form-select" aria-label="Filter by remarks">
+                        <option value="all" <?php echo $remarksFilter === 'all' ? 'selected' : ''; ?>>All Remarks</option>
+                        <option value="pending" <?php echo $remarksFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
+                        <option value="not_paid" <?php echo $remarksFilter === 'not_paid' ? 'selected' : ''; ?>>Not Paid</option>
+                        <option value="partially_paid" <?php echo $remarksFilter === 'partially_paid' ? 'selected' : ''; ?>>Partially Paid</option>
+                        <option value="paid" <?php echo $remarksFilter === 'paid' ? 'selected' : ''; ?>>Paid</option>
+                        <option value="fully_paid" <?php echo $remarksFilter === 'fully_paid' ? 'selected' : ''; ?>>Fully Paid</option>
+                    </select>
+                </div>
                 <div class="col-md-2">
                     <select name="per_page" class="form-select" aria-label="Rows per page">
                         <?php foreach ($allowedPerPage as $pageSize): ?>
@@ -765,8 +811,9 @@ if ($totalPages <= 7) {
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-outline-primary">Search</button>
+                <div class="col-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-outline-primary">Apply</button>
+                    <a href="/CPMraffle/participant_list.php" class="btn btn-outline-secondary">Reset</a>
                 </div>
             </form>
         </div>
