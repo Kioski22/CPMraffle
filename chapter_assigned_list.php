@@ -36,6 +36,19 @@ if (!in_array($statusFilter, ['all', 'pending', 'activated'], true)) {
     $statusFilter = 'all';
 }
 
+$remarksOptions = [
+    'all' => '',
+    'paid' => 'Paid',
+    'fully_paid' => 'Fully Paid',
+    'partially_paid' => 'Partially Paid',
+    'pending' => 'Pending',
+    'not_paid' => 'Not Paid',
+];
+$remarksFilter = strtolower(trim((string) ($_GET['remarks'] ?? 'all')));
+if (!array_key_exists($remarksFilter, $remarksOptions)) {
+    $remarksFilter = 'all';
+}
+
 $page = (int) ($_GET['page'] ?? 1);
 if ($page < 1) {
     $page = 1;
@@ -60,6 +73,12 @@ if ($statusFilter === 'activated') {
     $whereParts[] = '(LOWER(COALESCE(t.status, "pending")) = "activated" OR b.activation_completed_at IS NOT NULL)';
 } elseif ($statusFilter === 'pending') {
     $whereParts[] = '(LOWER(COALESCE(t.status, "pending")) <> "activated" AND b.activation_completed_at IS NULL)';
+}
+
+if ($remarksFilter !== 'all') {
+    $whereParts[] = 'LOWER(COALESCE(NULLIF(TRIM(b.remarks), ""), "Pending")) = ?';
+    $types .= 's';
+    $params[] = strtolower((string) $remarksOptions[$remarksFilter]);
 }
 
 $whereSql = ' WHERE ' . implode(' AND ', $whereParts);
@@ -95,6 +114,7 @@ $stmt = $conn->prepare('SELECT
         b.email,
         b.contact,
         b.buyer_type,
+    b.remarks,
         b.activation_completed_at,
         LOWER(COALESCE(t.status, "pending")) AS ticket_status
     FROM ticket_assignments ta
@@ -125,6 +145,7 @@ $toRow = min($totalRows, $offset + $pageSize);
 $baseQuery = [
     'q' => $search,
     'status' => $statusFilter,
+    'remarks' => $remarksFilter,
 ];
 ?>
 <!DOCTYPE html>
@@ -146,7 +167,7 @@ $baseQuery = [
 
         <div class="chapter-panel">
             <form class="row g-3 mb-3" method="GET" action="">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <label class="chapter-form-label" for="q">Search</label>
                     <input id="q" name="q" type="text" class="form-control chapter-input" value="<?php echo htmlspecialchars($search, ENT_QUOTES); ?>" placeholder="Ticket, name, email, contact">
                 </div>
@@ -158,7 +179,18 @@ $baseQuery = [
                         <option value="activated" <?php echo $statusFilter === 'activated' ? 'selected' : ''; ?>>Activated</option>
                     </select>
                 </div>
-                <div class="col-md-4 d-flex align-items-end gap-3 flex-wrap">
+                <div class="col-md-3">
+                    <label class="chapter-form-label" for="remarks">Remarks</label>
+                    <select id="remarks" name="remarks" class="form-select chapter-input">
+                        <option value="all" <?php echo $remarksFilter === 'all' ? 'selected' : ''; ?>>All</option>
+                        <option value="pending" <?php echo $remarksFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
+                        <option value="not_paid" <?php echo $remarksFilter === 'not_paid' ? 'selected' : ''; ?>>Not Paid</option>
+                        <option value="partially_paid" <?php echo $remarksFilter === 'partially_paid' ? 'selected' : ''; ?>>Partially Paid</option>
+                        <option value="paid" <?php echo $remarksFilter === 'paid' ? 'selected' : ''; ?>>Paid</option>
+                        <option value="fully_paid" <?php echo $remarksFilter === 'fully_paid' ? 'selected' : ''; ?>>Fully Paid</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end gap-3 flex-wrap">
                     <button type="submit" class="chapter-primary-button"><i class="fas fa-magnifying-glass"></i> Apply</button>
                     <a class="chapter-secondary-button" href="/CPMraffle/chapter_assigned_list.php"><i class="fas fa-rotate-left"></i> Reset</a>
                 </div>
@@ -180,6 +212,7 @@ $baseQuery = [
                             <th>Email</th>
                             <th>Contact</th>
                             <th>Buyer Type</th>
+                            <th>Remarks</th>
                             <th>Assigned At</th>
                             <th>Status</th>
                         </tr>
@@ -187,12 +220,14 @@ $baseQuery = [
                         <tbody>
                         <?php foreach ($assignedRows as $row): ?>
                             <?php $isActivated = strtolower((string) ($row['ticket_status'] ?? 'pending')) === 'activated' || !empty($row['activation_completed_at']); ?>
+                            <?php $remarksValue = trim((string) ($row['remarks'] ?? '')); ?>
                             <tr>
                                 <td><?php echo htmlspecialchars((string) ($row['ticket_number'] ?? ''), ENT_QUOTES); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($row['full_name'] ?? ''), ENT_QUOTES); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($row['email'] ?? ''), ENT_QUOTES); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($row['contact'] ?? ''), ENT_QUOTES); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($row['buyer_type'] ?? ''), ENT_QUOTES); ?></td>
+                                <td><?php echo htmlspecialchars($remarksValue !== '' ? $remarksValue : 'Pending', ENT_QUOTES); ?></td>
                                 <td><?php echo htmlspecialchars((string) ($row['assigned_at'] ?? ''), ENT_QUOTES); ?></td>
                                 <td>
                                     <?php if ($isActivated): ?>
@@ -210,6 +245,7 @@ $baseQuery = [
                 <div class="d-grid gap-3 mt-3 d-md-none">
                     <?php foreach ($assignedRows as $row): ?>
                         <?php $isActivated = strtolower((string) ($row['ticket_status'] ?? 'pending')) === 'activated' || !empty($row['activation_completed_at']); ?>
+                        <?php $remarksValue = trim((string) ($row['remarks'] ?? '')); ?>
                         <div class="chapter-mobile-record">
                             <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                                 <div>
@@ -226,6 +262,7 @@ $baseQuery = [
                             <div class="chapter-mobile-record-row"><span>Email</span><strong><?php echo htmlspecialchars((string) ($row['email'] ?? ''), ENT_QUOTES); ?></strong></div>
                             <div class="chapter-mobile-record-row"><span>Contact</span><strong><?php echo htmlspecialchars((string) ($row['contact'] ?? ''), ENT_QUOTES); ?></strong></div>
                             <div class="chapter-mobile-record-row"><span>Buyer Type</span><strong><?php echo htmlspecialchars((string) ($row['buyer_type'] ?? ''), ENT_QUOTES); ?></strong></div>
+                            <div class="chapter-mobile-record-row"><span>Remarks</span><strong><?php echo htmlspecialchars($remarksValue !== '' ? $remarksValue : 'Pending', ENT_QUOTES); ?></strong></div>
                             <div class="chapter-mobile-record-row"><span>Assigned At</span><strong><?php echo htmlspecialchars((string) ($row['assigned_at'] ?? ''), ENT_QUOTES); ?></strong></div>
                         </div>
                     <?php endforeach; ?>
