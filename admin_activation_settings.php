@@ -16,13 +16,11 @@ if (!isset($_SESSION['activation_settings_csrf'])) {
 $flashMessage = '';
 $flashType = 'success';
 
-$unitMultipliers = [
-    'minutes' => 60,
-    'hours' => 3600,
-    'days' => 86400,
-];
-
-$defaultTtl = ticket_activation_token_ttl($appConfig);
+$currentExpirationTimestamp = ticket_activation_expiration_timestamp($appConfig, $conn);
+$currentExpirationDate = $currentExpirationTimestamp !== null ? date('Y-m-d', $currentExpirationTimestamp) : '';
+$currentExpirationLabel = $currentExpirationTimestamp !== null
+    ? date('F j, Y g:i A', $currentExpirationTimestamp)
+    : 'Not set';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -31,19 +29,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Invalid settings request. Please refresh and try again.');
         }
 
-        $ttlValue = (int) ($_POST['ttl_value'] ?? 0);
-        $ttlUnit = strtolower(trim((string) ($_POST['ttl_unit'] ?? 'days')));
-        if (!array_key_exists($ttlUnit, $unitMultipliers)) {
-            $ttlUnit = 'days';
+        $expirationDate = trim((string) ($_POST['expiration_date'] ?? ''));
+        if ($expirationDate === '') {
+            throw new RuntimeException('Please select an expiration date.');
         }
 
-        if ($ttlValue <= 0) {
-            throw new RuntimeException('Expiration value must be greater than zero.');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $expirationDate)) {
+            throw new RuntimeException('Please provide a valid expiration date.');
         }
 
-        $ttlSeconds = $ttlValue * $unitMultipliers[$ttlUnit];
-        if ($ttlSeconds < 300 || $ttlSeconds > 31536000) {
-            throw new RuntimeException('Expiration must be between 5 minutes and 365 days.');
+        $expirationTimestamp = strtotime($expirationDate . ' 23:59:59');
+        if ($expirationTimestamp === false) {
+            throw new RuntimeException('Unable to parse the selected expiration date.');
+        }
+
+        // Keep the selected day usable until end of day in app timezone.
+        if ($expirationTimestamp <= time()) {
+            throw new RuntimeException('Expiration date must be later than today.');
         }
 
         $stmt = $conn->prepare('INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
@@ -51,49 +53,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Unable to save activation settings right now.');
         }
 
-        $settingKey = 'token_ttl_seconds';
-        $settingValue = (string) $ttlSeconds;
+        $settingKey = 'activation_links_expire_at';
+        $settingValue = date('Y-m-d H:i:s', $expirationTimestamp);
         $stmt->bind_param('ss', $settingKey, $settingValue);
         $stmt->execute();
         $stmt->close();
 
-        $flashMessage = 'Activation link expiration updated successfully.';
+        $flashMessage = 'Activation link expiration date updated successfully.';
         $flashType = 'success';
+
+        $currentExpirationTimestamp = $expirationTimestamp;
+        $currentExpirationDate = date('Y-m-d', $expirationTimestamp);
+        $currentExpirationLabel = date('F j, Y g:i A', $expirationTimestamp);
     } catch (Throwable $exception) {
         $flashMessage = $exception->getMessage();
         $flashType = 'danger';
     }
 }
 
-$currentTtlSeconds = ticket_activation_token_ttl($appConfig, $conn);
-$currentDays = $currentTtlSeconds / 86400;
-$currentHours = $currentTtlSeconds / 3600;
-$currentMinutes = $currentTtlSeconds / 60;
-
-$currentLabel = $currentTtlSeconds . ' seconds';
-if ($currentTtlSeconds % 86400 === 0) {
-    $wholeDays = (int) ($currentTtlSeconds / 86400);
-    $currentLabel = $wholeDays . ' day' . ($wholeDays === 1 ? '' : 's');
-} elseif ($currentTtlSeconds % 3600 === 0) {
-    $wholeHours = (int) ($currentTtlSeconds / 3600);
-    $currentLabel = $wholeHours . ' hour' . ($wholeHours === 1 ? '' : 's');
-} elseif ($currentTtlSeconds % 60 === 0) {
-    $wholeMinutes = (int) ($currentTtlSeconds / 60);
-    $currentLabel = $wholeMinutes . ' minute' . ($wholeMinutes === 1 ? '' : 's');
-}
-
-$formUnit = 'days';
-$formValue = max(1, (int) round($currentDays));
-if ($currentTtlSeconds % 86400 === 0) {
-    $formUnit = 'days';
-    $formValue = max(1, (int) ($currentTtlSeconds / 86400));
-} elseif ($currentTtlSeconds % 3600 === 0) {
-    $formUnit = 'hours';
-    $formValue = max(1, (int) ($currentTtlSeconds / 3600));
-} else {
-    $formUnit = 'minutes';
-    $formValue = max(1, (int) round($currentMinutes));
-}
+$formDateValue = $currentExpirationDate !== '' ? $currentExpirationDate : date('Y-m-d', strtotime('+7 days'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -192,7 +170,7 @@ if ($currentTtlSeconds % 86400 === 0) {
 
         .form-row {
             display: grid;
-            grid-template-columns: minmax(120px, 220px) minmax(130px, 180px);
+            grid-template-columns: minmax(220px, 320px);
             gap: 10px;
             align-items: end;
             margin-bottom: 10px;
@@ -205,8 +183,7 @@ if ($currentTtlSeconds % 86400 === 0) {
             color: #1f3c68;
         }
 
-        input[type='number'],
-        select {
+        input[type='date'] {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #cfd8e6;
@@ -274,7 +251,7 @@ if ($currentTtlSeconds % 86400 === 0) {
         <section class="panel">
             <div class="panel-header">
                 <h1>Activation Link Expiration</h1>
-                <p>Changes apply immediately to all pending activation links, including existing links.</p>
+                <p>Set one date when all unactivated activation links should expire.</p>
             </div>
 
             <div class="panel-body">
@@ -285,41 +262,19 @@ if ($currentTtlSeconds % 86400 === 0) {
                 <?php endif; ?>
 
                 <div class="meta-box">
-                    <strong>Current Expiration:</strong> <?php echo htmlspecialchars($currentLabel, ENT_QUOTES); ?>
-                    <div class="meta-grid">
-                        <div class="meta-item">
-                            <strong>Minutes</strong>
-                            <span><?php echo number_format($currentMinutes, 2); ?></span>
-                        </div>
-                        <div class="meta-item">
-                            <strong>Hours</strong>
-                            <span><?php echo number_format($currentHours, 2); ?></span>
-                        </div>
-                        <div class="meta-item">
-                            <strong>Days</strong>
-                            <span><?php echo number_format($currentDays, 2); ?></span>
-                        </div>
-                    </div>
+                    <strong>Current Expiration Date:</strong> <?php echo htmlspecialchars($currentExpirationLabel, ENT_QUOTES); ?>
                 </div>
 
                 <form method="POST">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars((string) $_SESSION['activation_settings_csrf'], ENT_QUOTES); ?>">
                     <div class="form-row">
                         <div>
-                            <label for="ttl_value">Expiration Value</label>
-                            <input type="number" id="ttl_value" name="ttl_value" min="1" step="1" value="<?php echo (int) $formValue; ?>" required>
-                        </div>
-                        <div>
-                            <label for="ttl_unit">Unit</label>
-                            <select id="ttl_unit" name="ttl_unit">
-                                <option value="minutes" <?php echo $formUnit === 'minutes' ? 'selected' : ''; ?>>Minutes</option>
-                                <option value="hours" <?php echo $formUnit === 'hours' ? 'selected' : ''; ?>>Hours</option>
-                                <option value="days" <?php echo $formUnit === 'days' ? 'selected' : ''; ?>>Days</option>
-                            </select>
+                            <label for="expiration_date">Expiration Date</label>
+                            <input type="date" id="expiration_date" name="expiration_date" value="<?php echo htmlspecialchars($formDateValue, ENT_QUOTES); ?>" required>
                         </div>
                     </div>
-                    <p class="hint">Allowed range: 5 minutes to 365 days.</p>
-                    <button type="submit" class="btn">Save Activation Expiration</button>
+                    <p class="hint">All currently unactivated links will become invalid after 11:59:59 PM of the selected date.</p>
+                    <button type="submit" class="btn">Save Expiration Date</button>
                 </form>
             </div>
         </section>

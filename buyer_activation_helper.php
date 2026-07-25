@@ -45,6 +45,44 @@ if (!function_exists('ticket_activation_token_ttl')) {
     }
 }
 
+if (!function_exists('ticket_activation_expiration_timestamp')) {
+    function ticket_activation_expiration_timestamp(array $appConfig, ?mysqli $conn = null): ?int
+    {
+        if ($conn instanceof mysqli) {
+            $conn->query("CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'activation_links_expire_at' LIMIT 1");
+            if ($stmt) {
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $row = $result ? $result->fetch_assoc() : null;
+                $stmt->close();
+
+                if (is_array($row)) {
+                    $rawValue = trim((string) ($row['setting_value'] ?? ''));
+                    if ($rawValue !== '') {
+                        $timestamp = strtotime($rawValue);
+                        if ($timestamp !== false) {
+                            return $timestamp;
+                        }
+                    }
+                }
+            }
+        }
+
+        $fallback = trim((string) ($appConfig['activation_portal']['expires_at'] ?? ''));
+        if ($fallback === '') {
+            return null;
+        }
+
+        $fallbackTimestamp = strtotime($fallback);
+        return $fallbackTimestamp !== false ? $fallbackTimestamp : null;
+    }
+}
+
 if (!function_exists('ticket_activation_portal_url')) {
     function ticket_activation_portal_url(array $appConfig, string $accessToken): string
     {
@@ -66,7 +104,12 @@ if (!function_exists('ticket_issue_buyer_activation_access')) {
         $selector = bin2hex(random_bytes(8));
         $verifier = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $verifier);
-        $expiresAt = date('Y-m-d H:i:s', time() + ticket_activation_token_ttl($appConfig, $conn));
+        $configuredExpiry = ticket_activation_expiration_timestamp($appConfig, $conn);
+        if ($configuredExpiry !== null && $configuredExpiry > time()) {
+            $expiresAt = date('Y-m-d H:i:s', $configuredExpiry);
+        } else {
+            $expiresAt = date('Y-m-d H:i:s', time() + ticket_activation_token_ttl($appConfig, $conn));
+        }
 
         $stmt = $conn->prepare('UPDATE buyers
             SET activation_selector = ?,
@@ -124,13 +167,21 @@ if (!function_exists('ticket_find_buyer_by_activation_access')) {
         global $appConfig;
         $resolvedConfig = is_array($appConfig ?? null) ? $appConfig : [];
 
+        $configuredExpiry = ticket_activation_expiration_timestamp($resolvedConfig, $conn);
+        if ($configuredExpiry !== null) {
+            if ($configuredExpiry < time()) {
+                return null;
+            }
+            return $buyer;
+        }
+
+        // Backward-compatible fallback for deployments that still use duration-based TTL.
         $sentRaw = trim((string) ($buyer['activation_portal_sent_at'] ?? ''));
         $createdRaw = trim((string) ($buyer['created_at'] ?? ''));
         $sentTime = $sentRaw !== '' ? strtotime($sentRaw) : false;
         if ($sentTime === false && $createdRaw !== '') {
             $sentTime = strtotime($createdRaw);
         }
-
         if ($sentTime === false) {
             return null;
         }
