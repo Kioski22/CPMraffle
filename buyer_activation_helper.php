@@ -3,10 +3,45 @@
 require_once __DIR__ . '/buyer_schema.php';
 
 if (!function_exists('ticket_activation_token_ttl')) {
-    function ticket_activation_token_ttl(array $appConfig): int
+    function ticket_activation_token_ttl(array $appConfig, ?mysqli $conn = null): int
     {
-        $seconds = (int) (($appConfig['activation_portal']['token_ttl_seconds'] ?? 604800));
-        return $seconds > 0 ? $seconds : 604800;
+        $defaultSeconds = (int) (($appConfig['activation_portal']['token_ttl_seconds'] ?? 604800));
+        if ($defaultSeconds <= 0) {
+            $defaultSeconds = 604800;
+        }
+
+        if ($conn instanceof mysqli) {
+            $conn->query("CREATE TABLE IF NOT EXISTS system_settings (
+                setting_key VARCHAR(100) NOT NULL PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            $seed = $conn->prepare('INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)');
+            if ($seed) {
+                $seedKey = 'token_ttl_seconds';
+                $seedValue = (string) $defaultSeconds;
+                $seed->bind_param('ss', $seedKey, $seedValue);
+                $seed->execute();
+                $seed->close();
+            }
+
+            $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'token_ttl_seconds' LIMIT 1");
+            if ($stmt) {
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $row = $result ? $result->fetch_assoc() : null;
+                $stmt->close();
+
+                if (is_array($row) && isset($row['setting_value'])) {
+                    $dbSeconds = (int) $row['setting_value'];
+                    if ($dbSeconds > 0) {
+                        return $dbSeconds;
+                    }
+                }
+            }
+        }
+
+        return $defaultSeconds;
     }
 }
 
@@ -31,7 +66,7 @@ if (!function_exists('ticket_issue_buyer_activation_access')) {
         $selector = bin2hex(random_bytes(8));
         $verifier = bin2hex(random_bytes(32));
         $tokenHash = hash('sha256', $verifier);
-        $expiresAt = date('Y-m-d H:i:s', time() + ticket_activation_token_ttl($appConfig));
+        $expiresAt = date('Y-m-d H:i:s', time() + ticket_activation_token_ttl($appConfig, $conn));
 
         $stmt = $conn->prepare('UPDATE buyers
             SET activation_selector = ?,
@@ -85,7 +120,23 @@ if (!function_exists('ticket_find_buyer_by_activation_access')) {
         if (empty($buyer['activation_token_hash']) || !hash_equals((string) $buyer['activation_token_hash'], hash('sha256', $verifier))) {
             return null;
         }
-        if (!empty($buyer['activation_token_expires_at']) && strtotime((string) $buyer['activation_token_expires_at']) < time()) {
+
+        global $appConfig;
+        $resolvedConfig = is_array($appConfig ?? null) ? $appConfig : [];
+
+        $sentRaw = trim((string) ($buyer['activation_portal_sent_at'] ?? ''));
+        $createdRaw = trim((string) ($buyer['created_at'] ?? ''));
+        $sentTime = $sentRaw !== '' ? strtotime($sentRaw) : false;
+        if ($sentTime === false && $createdRaw !== '') {
+            $sentTime = strtotime($createdRaw);
+        }
+
+        if ($sentTime === false) {
+            return null;
+        }
+
+        $ttl = ticket_activation_token_ttl($resolvedConfig, $conn);
+        if (($sentTime + $ttl) < time()) {
             return null;
         }
 

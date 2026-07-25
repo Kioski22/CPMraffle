@@ -44,9 +44,16 @@ if ($currentPage > $totalPages) {
 $offset = ($currentPage - 1) * $perPage;
 
 $pendingTickets = [];
-$pendingListStmt = $conn->prepare("SELECT t.ticket_number, t.created_at,
-        COALESCE(u.chapter_name, u.name, '') AS chapter_name
+$pendingListStmt = $conn->prepare("SELECT t.ticket_number,
+        t.created_at,
+        COALESCE(u.chapter_name, u.name, '') AS chapter_name,
+        ta.buyer_id,
+        b.full_name AS buyer_name,
+        b.email AS buyer_email,
+        t.verification_link
     FROM tickets t
+    LEFT JOIN ticket_assignments ta ON ta.ticket_number = t.ticket_number
+    LEFT JOIN buyers b ON b.id = ta.buyer_id
     LEFT JOIN users u ON u.id = t.assigned_chapter_id
     WHERE LOWER(t.status) = 'pending'
     ORDER BY t.ticket_number ASC
@@ -411,6 +418,52 @@ $chartData = array_column($ticketCounts, 'count');
             background: #f7f9fc;
         }
 
+        .bulk-actions {
+            display: flex;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border: 1px solid transparent;
+            border-radius: 7px;
+            padding: 0.45rem 0.65rem;
+            font-size: 0.85rem;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .action-btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .action-btn-primary:hover {
+            background: #1f2b47;
+            border-color: #1f2b47;
+        }
+
+        .action-btn-outline {
+            background: #fff;
+            border-color: var(--border-color);
+            color: var(--primary);
+        }
+
+        .action-btn-outline:hover {
+            background: #f7f9fc;
+        }
+
+        .link-muted {
+            color: #6b7280;
+            font-size: 0.82rem;
+            font-style: italic;
+        }
+
         .pending-table tbody tr:hover {
             background: #fafcff;
         }
@@ -511,6 +564,11 @@ $chartData = array_column($ticketCounts, 'count');
                         <strong>Pending Tickets List</strong><br>
                         <small>Showing <?php echo (int) $startRecord; ?>-<?php echo (int) $endRecord; ?> of <?php echo (int) $totalPending; ?> pending tickets</small>
                     </div>
+                    <div class="bulk-actions">
+                        <button type="button" id="openSelectedBtn" class="action-btn action-btn-primary">
+                            <i class="fas fa-up-right-from-square"></i> Open Selected Portals
+                        </button>
+                    </div>
                     <form method="GET">
                         <label for="per_page">Rows per page:</label>
                         <select id="per_page" name="per_page" onchange="this.form.submit()">
@@ -526,24 +584,57 @@ $chartData = array_column($ticketCounts, 'count');
                     <table class="pending-table">
                         <thead>
                             <tr>
+                                <th style="width:42px;"><input type="checkbox" id="selectAllLinks" aria-label="Select all tickets with links"></th>
                                 <th>#</th>
                                 <th>Ticket Number</th>
+                                <th>Buyer Name</th>
+                                <th>Buyer Email</th>
                                 <th>Chapter</th>
                                 <th>Created At</th>
+                                <th>Activation</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if ($pendingTickets === []): ?>
                                 <tr>
-                                    <td colspan="4" style="text-align:center;color:#6b7280;padding:1rem;">No pending tickets found.</td>
+                                    <td colspan="8" style="text-align:center;color:#6b7280;padding:1rem;">No pending tickets found.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($pendingTickets as $index => $ticketRow): ?>
+                                    <?php
+                                    $verificationLink = trim((string) ($ticketRow['verification_link'] ?? ''));
+                                    $hasVerificationLink = $verificationLink !== '';
+                                    ?>
                                     <tr>
+                                        <td>
+                                            <?php if ($hasVerificationLink): ?>
+                                                <input
+                                                    type="checkbox"
+                                                    class="row-link-selector"
+                                                    value="<?php echo htmlspecialchars($verificationLink, ENT_QUOTES); ?>"
+                                                    data-ticket="<?php echo htmlspecialchars((string) ($ticketRow['ticket_number'] ?? ''), ENT_QUOTES); ?>"
+                                                    aria-label="Select <?php echo htmlspecialchars((string) ($ticketRow['ticket_number'] ?? ''), ENT_QUOTES); ?>">
+                                            <?php endif; ?>
+                                        </td>
                                         <td><?php echo (int) ($offset + $index + 1); ?></td>
                                         <td><?php echo htmlspecialchars((string) ($ticketRow['ticket_number'] ?? ''), ENT_QUOTES); ?></td>
+                                        <td><?php echo htmlspecialchars((string) (($ticketRow['buyer_name'] ?? '') !== '' ? $ticketRow['buyer_name'] : 'Unassigned'), ENT_QUOTES); ?></td>
+                                        <td><?php echo htmlspecialchars((string) (($ticketRow['buyer_email'] ?? '') !== '' ? $ticketRow['buyer_email'] : '-'), ENT_QUOTES); ?></td>
                                         <td><?php echo htmlspecialchars((string) (($ticketRow['chapter_name'] ?? '') !== '' ? $ticketRow['chapter_name'] : 'Unassigned'), ENT_QUOTES); ?></td>
                                         <td><?php echo htmlspecialchars((string) ($ticketRow['created_at'] ?? ''), ENT_QUOTES); ?></td>
+                                        <td>
+                                            <?php if ($hasVerificationLink): ?>
+                                                <a
+                                                    class="action-btn action-btn-outline"
+                                                    href="<?php echo htmlspecialchars($verificationLink, ENT_QUOTES); ?>"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer">
+                                                    <i class="fas fa-arrow-up-right-from-square"></i> Open Portal
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="link-muted">No activation link</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -640,6 +731,47 @@ $chartData = array_column($ticketCounts, 'count');
                         }
                     }
                 }
+            });
+        }
+
+        var selectAllLinks = document.getElementById('selectAllLinks');
+        var rowSelectors = Array.prototype.slice.call(document.querySelectorAll('.row-link-selector'));
+        if (selectAllLinks && rowSelectors.length > 0) {
+            selectAllLinks.addEventListener('change', function() {
+                rowSelectors.forEach(function(checkbox) {
+                    checkbox.checked = selectAllLinks.checked;
+                });
+            });
+
+            rowSelectors.forEach(function(checkbox) {
+                checkbox.addEventListener('change', function() {
+                    selectAllLinks.checked = rowSelectors.every(function(item) {
+                        return item.checked;
+                    });
+                });
+            });
+        }
+
+        var openSelectedBtn = document.getElementById('openSelectedBtn');
+        if (openSelectedBtn) {
+            openSelectedBtn.addEventListener('click', function() {
+                var selectedLinks = rowSelectors
+                    .filter(function(checkbox) {
+                        return checkbox.checked;
+                    })
+                    .map(function(checkbox) {
+                        return checkbox.value;
+                    });
+
+                if (selectedLinks.length === 0) {
+                    alert('Select at least one pending ticket with an activation link.');
+                    return;
+                }
+
+                var uniqueLinks = Array.from(new Set(selectedLinks));
+                uniqueLinks.forEach(function(link) {
+                    window.open(link, '_blank', 'noopener');
+                });
             });
         }
     </script>

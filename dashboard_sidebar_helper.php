@@ -19,6 +19,7 @@ if (!function_exists('render_dashboard_sidebar')) {
                     ['path' => '/CPMraffle/assign_tickets_to_chapter.php', 'icon' => 'fas fa-share-square', 'label' => 'Chapter Allocation'],
                     ['path' => '/CPMraffle/admin_chapter_allocation.php', 'icon' => 'fas fa-diagram-project', 'label' => 'Unified Allocation'],
                     ['path' => '/CPMraffle/admin_chapter_list.php', 'icon' => 'fas fa-table-list', 'label' => 'Chapter Monitoring'],
+                    ['path' => '/CPMraffle/admin_activation_settings.php', 'icon' => 'fas fa-clock-rotate-left', 'label' => 'Activation Settings'],
                     ['path' => '/CPMraffle/reports.php', 'icon' => 'fas fa-chart-line', 'label' => 'Reports'],
                     ['path' => '/CPMraffle/logout.php', 'icon' => 'fas fa-right-from-bracket', 'label' => 'Logout'],
                 ];
@@ -40,6 +41,7 @@ if (!function_exists('render_dashboard_sidebar')) {
                     ['path' => '/CPMraffle/admin_chapter_list.php', 'icon' => 'fas fa-table-list', 'label' => 'Chapter Monitoring'],
                     ['path' => '/CPMraffle/ticket_layout_editor.php', 'icon' => 'fas fa-object-group', 'label' => 'Ticket Layout'],
                     ['path' => '/CPMraffle/email_template_settings.php', 'icon' => 'fas fa-envelope-open-text', 'label' => 'Email Templates'],
+                    ['path' => '/CPMraffle/admin_activation_settings.php', 'icon' => 'fas fa-clock-rotate-left', 'label' => 'Activation Settings'],
                     ['path' => '/CPMraffle/reg.php', 'icon' => 'fas fa-user-shield', 'label' => 'Register User'],
                     ['path' => '/CPMraffle/reports.php', 'icon' => 'fas fa-chart-line', 'label' => 'Reports'],
                     ['path' => '/CPMraffle/logout.php', 'icon' => 'fas fa-right-from-bracket', 'label' => 'Logout'],
