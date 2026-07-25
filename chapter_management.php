@@ -160,6 +160,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $remarksStmt->execute();
             $remarksStmt->close();
 
+            $buyerRemarksStmt = $conn->prepare("
+                UPDATE buyers b
+                INNER JOIN ticket_assignments ta ON ta.buyer_id = b.id
+                INNER JOIN tickets t ON t.ticket_number = ta.ticket_number
+                SET b.remarks = ?, b.updated_at = NOW()
+                WHERE t.assigned_chapter_id = ?
+            ");
+            if ($buyerRemarksStmt) {
+                $buyerRemarksStmt->bind_param('si', $remarksValue, $chapterId);
+                $buyerRemarksStmt->execute();
+                $buyerRemarksStmt->close();
+            }
+
             $flashMessage = 'Chapter remarks updated successfully.';
             $flashType = 'success';
         } else {
