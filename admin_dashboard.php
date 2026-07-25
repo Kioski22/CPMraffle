@@ -30,6 +30,7 @@ if ($stmt) {
             $usernameCandidate = trim((string) ($user['username'] ?? ''));
             if ($usernameCandidate !== '') {
                 $userName = $usernameCandidate;
+            }
         }
     }
 }
