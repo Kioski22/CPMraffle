@@ -34,6 +34,20 @@ if ($stmt) {
         }
     }
 }
+
+// Fetch last assigned ticket
+$lastTicketQuery = "
+    SELECT ta.ticket_number, ta.assigned_at, b.buyer_type, b.full_name, b.chapter
+    FROM ticket_assignments ta
+    JOIN buyers b ON ta.buyer_id = b.id
+    ORDER BY ta.assigned_at DESC, ta.id DESC
+    LIMIT 1
+";
+$lastTicketResult = $conn->query($lastTicketQuery);
+$lastAssignedTicket = null;
+if ($lastTicketResult && $lastTicketResult->num_rows > 0) {
+    $lastAssignedTicket = $lastTicketResult->fetch_assoc();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -68,6 +82,28 @@ if ($stmt) {
         <div class="intro">
             <h2>Welcome</h2>
             <p>Monitor ticket activation, pending requests, onsite purchases, and participant details from this dashboard.</p>
+
+            <?php if ($lastAssignedTicket): ?>
+            <div class="last-assignment-banner" style="background: #e8f4f8; padding: 15px; border-left: 4px solid #3498db; margin-top: 15px; border-radius: 4px;">
+                <strong>Last Ticket Assigned:</strong> 
+                <?php echo htmlspecialchars($lastAssignedTicket['ticket_number']); ?>
+                <span style="margin: 0 10px;">|</span>
+                <strong>Assignment Type:</strong> 
+                <?php 
+                if ($lastAssignedTicket['buyer_type'] === 'chapter') {
+                    echo 'Chapter Assignment (' . htmlspecialchars($lastAssignedTicket['chapter']) . ')';
+                } else {
+                    echo 'Individual Buyer (' . htmlspecialchars($lastAssignedTicket['full_name']) . ')';
+                }
+                ?>
+                <span style="margin: 0 10px;">|</span>
+                <small><i class="fas fa-clock"></i> <?php echo date('M j, Y g:i A', strtotime($lastAssignedTicket['assigned_at'])); ?></small>
+            </div>
+            <?php else: ?>
+            <div class="last-assignment-banner" style="background: #fdf2e9; padding: 15px; border-left: 4px solid #e67e22; margin-top: 15px; border-radius: 4px;">
+                <em>No tickets have been assigned yet.</em>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="grid">
