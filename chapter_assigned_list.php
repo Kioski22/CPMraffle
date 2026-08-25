@@ -4,6 +4,8 @@ auth_require_roles(['chapter']);
 
 include __DIR__ . '/db.php';
 require_once __DIR__ . '/buyer_schema.php';
+require_once __DIR__ . '/email_composer.php';
+require_once __DIR__ . '/buyer_assignment_mailer.php';
 require_once __DIR__ . '/chapter_portal_helper.php';
 require_once __DIR__ . '/dashboard_sidebar_helper.php';
 
@@ -28,6 +30,100 @@ function chapter_assigned_bind_params(mysqli_stmt $stmt, string $types, array &$
     }
 
     return call_user_func_array([$stmt, 'bind_param'], $bindValues);
+}
+
+$flashMessage = '';
+$flashType = 'success';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string) ($_POST['action'] ?? ''));
+    if ($action === 'resend_ticket') {
+        try {
+            $buyerId = (int) ($_POST['buyer_id'] ?? 0);
+            $ticketNumber = trim((string) ($_POST['ticket_number'] ?? ''));
+
+            if ($buyerId <= 0 && $ticketNumber === '') {
+                throw new RuntimeException('Invalid ticket or buyer selection.');
+            }
+
+            $buyer = null;
+            if ($buyerId > 0) {
+                $buyerStmt = $conn->prepare('SELECT DISTINCT b.id, b.full_name, b.email, b.chapter, b.buyer_type
+                    FROM buyers b
+                    INNER JOIN ticket_assignments ta ON ta.buyer_id = b.id
+                    INNER JOIN tickets t ON t.ticket_number = ta.ticket_number
+                    WHERE b.id = ? AND t.assigned_chapter_id = ?
+                    LIMIT 1');
+                if ($buyerStmt) {
+                    $buyerStmt->bind_param('ii', $buyerId, $chapterId);
+                    $buyerStmt->execute();
+                    $buyer = $buyerStmt->get_result()->fetch_assoc();
+                    $buyerStmt->close();
+                }
+            }
+            if (!$buyer && $ticketNumber !== '') {
+                $buyerStmt = $conn->prepare('SELECT DISTINCT b.id, b.full_name, b.email, b.chapter, b.buyer_type
+                    FROM buyers b
+                    INNER JOIN ticket_assignments ta ON ta.buyer_id = b.id
+                    INNER JOIN tickets t ON t.ticket_number = ta.ticket_number
+                    WHERE ta.ticket_number = ? AND t.assigned_chapter_id = ?
+                    LIMIT 1');
+                if ($buyerStmt) {
+                    $buyerStmt->bind_param('si', $ticketNumber, $chapterId);
+                    $buyerStmt->execute();
+                    $buyer = $buyerStmt->get_result()->fetch_assoc();
+                    $buyerStmt->close();
+                }
+            }
+
+            if (!$buyer) {
+                throw new RuntimeException('Buyer record not found or you do not have permission to resend tickets for this record.');
+            }
+
+            $targetBuyerId = (int) $buyer['id'];
+
+            $ticketStmt = $conn->prepare('SELECT ta.ticket_number
+                FROM ticket_assignments ta
+                INNER JOIN tickets t ON t.ticket_number = ta.ticket_number
+                WHERE ta.buyer_id = ? AND t.assigned_chapter_id = ?
+                ORDER BY ta.ticket_number ASC');
+            if (!$ticketStmt) {
+                throw new RuntimeException('Unable to fetch buyer assigned tickets.');
+            }
+            $ticketStmt->bind_param('ii', $targetBuyerId, $chapterId);
+            $ticketStmt->execute();
+            $ticketRes = $ticketStmt->get_result();
+            $ticketNumbers = [];
+            while ($ticketRes && ($tRow = $ticketRes->fetch_assoc())) {
+                $tNum = trim((string) ($tRow['ticket_number'] ?? ''));
+                if ($tNum !== '') {
+                    $ticketNumbers[] = $tNum;
+                }
+            }
+            $ticketStmt->close();
+
+            if ($ticketNumbers === []) {
+                throw new RuntimeException('No assigned tickets found for this buyer.');
+            }
+
+            $sendResult = ticket_send_buyer_assignment_email($conn, $appConfig, $buyer, $ticketNumbers);
+            $deliveryMethod = (string) ($sendResult['delivery_method'] ?? 'Email');
+
+            $statusAfterEmail = buyerDetermineStatus(buyerFetchActivationCounts($conn, $targetBuyerId), true);
+            $markSent = $conn->prepare('UPDATE buyers SET status = ?, email_sent_at = NOW(), updated_at = NOW() WHERE id = ?');
+            if ($markSent) {
+                $markSent->bind_param('si', $statusAfterEmail, $targetBuyerId);
+                $markSent->execute();
+                $markSent->close();
+            }
+
+            $flashMessage = 'Ticket email successfully resent to ' . $buyer['full_name'] . ' (' . implode(', ', $ticketNumbers) . ') via ' . $deliveryMethod . '.';
+            $flashType = 'success';
+        } catch (Throwable $e) {
+            $flashMessage = $e->getMessage();
+            $flashType = 'danger';
+        }
+    }
 }
 
 $search = trim((string) ($_GET['q'] ?? ''));
@@ -110,11 +206,12 @@ $assignedRows = [];
 $stmt = $conn->prepare('SELECT
         ta.ticket_number,
         ta.assigned_at,
+        b.id AS buyer_id,
         b.full_name,
         b.email,
         b.contact,
         b.buyer_type,
-    b.remarks,
+        b.remarks,
         b.activation_completed_at,
         LOWER(COALESCE(t.status, "pending")) AS ticket_status
     FROM ticket_assignments ta
@@ -151,6 +248,40 @@ $baseQuery = [
 <!DOCTYPE html>
 <html lang="en">
 <?php chapter_portal_render_head('Chapter Assigned List'); ?>
+<head>
+    <style>
+        .chapter-resend-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 12px;
+            border: 1.5px solid #b4c7dd;
+            background-color: #ffffff;
+            color: #17325c;
+            font-size: 0.88rem;
+            font-weight: 700;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            text-decoration: none;
+            white-space: nowrap;
+            box-shadow: 0 2px 5px rgba(23, 50, 92, 0.05);
+        }
+        .chapter-resend-button:hover {
+            background-color: #f0f5fc;
+            border-color: #17325c;
+            color: #17325c;
+            box-shadow: 0 4px 10px rgba(23, 50, 92, 0.12);
+            transform: translateY(-1px);
+        }
+        .chapter-resend-button i {
+            font-size: 0.95rem;
+            color: #24497d;
+        }
+    </style>
+</head>
 <body>
 <div class="dashboard-container">
     <?php render_dashboard_sidebar('/CPMraffle/chapter_assigned_list.php', false); ?>
@@ -166,6 +297,13 @@ $baseQuery = [
         </section>
 
         <div class="chapter-panel">
+            <?php if ($flashMessage !== ''): ?>
+                <div class="alert alert-<?php echo htmlspecialchars($flashType, ENT_QUOTES); ?> alert-dismissible fade show mb-3" role="alert">
+                    <i class="<?php echo $flashType === 'success' ? 'fas fa-circle-check' : 'fas fa-circle-exclamation'; ?> me-2"></i>
+                    <?php echo htmlspecialchars($flashMessage, ENT_QUOTES); ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
             <form class="row g-3 mb-3" method="GET" action="">
                 <div class="col-md-4">
                     <label class="chapter-form-label" for="q">Search</label>
@@ -215,6 +353,7 @@ $baseQuery = [
                             <th>Remarks</th>
                             <th>Assigned At</th>
                             <th>Status</th>
+                            <th class="text-end">Action</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -235,6 +374,17 @@ $baseQuery = [
                                     <?php else: ?>
                                         <span class="chapter-status-badge chapter-status-pending">Pending</span>
                                     <?php endif; ?>
+                                </td>
+                                <td class="text-end">
+                                    <form method="POST" action="" class="d-inline" onsubmit="return confirm('Resend ticket email to <?php echo htmlspecialchars(addslashes((string)($row['full_name'] ?? '')), ENT_QUOTES); ?>?');">
+                                        <input type="hidden" name="action" value="resend_ticket">
+                                        <input type="hidden" name="buyer_id" value="<?php echo (int) ($row['buyer_id'] ?? 0); ?>">
+                                        <input type="hidden" name="ticket_number" value="<?php echo htmlspecialchars((string) ($row['ticket_number'] ?? ''), ENT_QUOTES); ?>">
+                                        <button type="submit" class="chapter-resend-button" title="Resend Ticket">
+                                            <i class="fas fa-paper-plane"></i>
+                                            <span style="text-align: left; line-height: 1.15;">Resend<br>Ticket</span>
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -264,6 +414,20 @@ $baseQuery = [
                             <div class="chapter-mobile-record-row"><span>Buyer Type</span><strong><?php echo htmlspecialchars((string) ($row['buyer_type'] ?? ''), ENT_QUOTES); ?></strong></div>
                             <div class="chapter-mobile-record-row"><span>Remarks</span><strong><?php echo htmlspecialchars($remarksValue !== '' ? $remarksValue : 'Pending', ENT_QUOTES); ?></strong></div>
                             <div class="chapter-mobile-record-row"><span>Assigned At</span><strong><?php echo htmlspecialchars((string) ($row['assigned_at'] ?? ''), ENT_QUOTES); ?></strong></div>
+                            <div class="chapter-mobile-record-row pt-2 align-items-center">
+                                <span>Action</span>
+                                <strong>
+                                    <form method="POST" action="" class="d-inline" onsubmit="return confirm('Resend ticket email to <?php echo htmlspecialchars(addslashes((string)($row['full_name'] ?? '')), ENT_QUOTES); ?>?');">
+                                        <input type="hidden" name="action" value="resend_ticket">
+                                        <input type="hidden" name="buyer_id" value="<?php echo (int) ($row['buyer_id'] ?? 0); ?>">
+                                        <input type="hidden" name="ticket_number" value="<?php echo htmlspecialchars((string) ($row['ticket_number'] ?? ''), ENT_QUOTES); ?>">
+                                        <button type="submit" class="chapter-resend-button">
+                                            <i class="fas fa-paper-plane"></i>
+                                            <span>Resend Ticket</span>
+                                        </button>
+                                    </form>
+                                </strong>
+                            </div>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -298,5 +462,6 @@ $baseQuery = [
         </div>
     </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
